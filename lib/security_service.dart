@@ -6,7 +6,7 @@ class SecurityService {
 
   // إعدادات التشفير المحسنة لنظامي التشغيل
   static const _androidOptions = AndroidOptions(encryptedSharedPreferences: true);
-  static const _iosOptions = IOSOptions(accessibility: KeychainAccessibility.firstUnlock);
+  static const _iosOptions = IOSOptions(accessibility: KeychainAccessibility.first_unlock);
 
   static const _storage = FlutterSecureStorage(
     aOptions: _androidOptions,

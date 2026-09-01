@@ -5,6 +5,8 @@ import 'package:url_launcher/url_launcher.dart';
 import 'database_helper.dart';
 import 'security_service.dart';
 import 'settings_screen.dart';
+import 'app_theme.dart'; // استيراد الثيم الحقيقي
+import 'route_optimization_screen.dart'; // استيراد شاشة مسار التوصيل الذكي الجديدة
 import 'manifest_sheet_screen.dart' as manifest_file;
 import 'recycle_bin_screen.dart' as recycle_file;
 
@@ -21,14 +23,10 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'مساعد التوصيل',
-      theme: AppTheme.lightTheme,
+      theme: AppTheme.lightTheme, // الاعتماد على الثيم الحقيقي المستورد بنجاح
       home: const HomeScreen(),
     );
   }
-}
-
-class AppTheme {
-  static ThemeData? get lightTheme => null;
 }
 
 class HomeScreen extends StatefulWidget {
@@ -69,6 +67,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _verifyEnteredPin() async {
     final isValid = await SecurityService.verifyPin(_pinInputController.text.trim());
+    if (!mounted) return;
     if (isValid) {
       setState(() {
         _isAuthenticated = true;
@@ -124,6 +123,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final image = await ImagePicker().pickImage(source: source);
     if (image == null) return;
 
+    if (!mounted) return;
     setState(() {
       _isLoading = true;
       _extractedOrders.clear();
@@ -180,7 +180,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  Future<void> _openWhatsApp(String phone, [StateSetter? setSheetState]) async {
+  Future<void> _openWhatsApp(String phone) async {
     String cleanPhone = phone.replaceAll(RegExp(r'[^\d]'), '');
     if (cleanPhone.startsWith('0')) {
       cleanPhone = '962${cleanPhone.substring(1)}';
@@ -193,10 +193,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
     try {
       if (await canLaunchUrl(uri)) {
-        if (mounted) {
-          setState(() => _sentPhones.add(phone));
-          setSheetState?.call(() {});
-        }
+        if (!mounted) return;
+        setState(() => _sentPhones.add(phone));
         await launchUrl(uri, mode: LaunchMode.externalApplication);
       } else {
         _showMessage('تطبيق واتساب غير مثبت على الجهاز');
@@ -235,6 +233,56 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  void _showLocationInputDialog(String phone, String orderId, StateSetter setSheetState) {
+    final TextEditingController locationController = TextEditingController();
+    
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('تحديد موقع العميل (شحنة: $orderId)'),
+        content: TextField(
+          controller: locationController,
+          decoration: const InputDecoration(
+            labelText: 'أدخل تفاصيل الموقع أو العنوان',
+            hintText: 'مثال: عمان - الجبيهة - شارع الجامعة',
+            border: OutlineInputBorder(),
+          ),
+          autofocus: true,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('إلغاء'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white),
+            onPressed: () async {
+              String newLocation = locationController.text.trim();
+              if (newLocation.isNotEmpty) {
+                await DatabaseHelper.instance.updateManifestItemAddress(orderId, newLocation);
+                
+                if (!mounted) return;
+
+                setState(() {
+                  final index = _extractedOrders.indexWhere((o) => o['orderId'] == orderId);
+                  if (index != -1) {
+                    _extractedOrders[index]['address'] = newLocation;
+                  }
+                });
+
+                setSheetState(() {});
+                if (!ctx.mounted) return;
+                Navigator.pop(ctx);
+                _showMessage('تم حفظ موقع العميل بنجاح');
+              }
+            },
+            child: const Text('حفظ الموقع'),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _showPhonesDialog() {
     showModalBottomSheet(
       context: context,
@@ -251,7 +299,10 @@ class _HomeScreenState extends State<HomeScreen> {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text('الأرقام المكتشفة (${_extractedOrders.length})', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-                    Text('تم مراسلة ${_sentPhones.length} من ${_extractedOrders.length}', style: TextStyle(color: Colors.grey.shade600, fontSize: 13)),
+                    Text(
+                      'تم تحديد مواقع لـ ${_extractedOrders.where((o) => o['address'] != 'عمان - تحديد الموقع عبر الخريطة').length}', 
+                      style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
+                    ),
                   ],
                 ),
                 const Divider(height: 20),
@@ -262,25 +313,45 @@ class _HomeScreenState extends State<HomeScreen> {
                     itemBuilder: (ctx, index) {
                       final order = _extractedOrders[index];
                       final phone = order['mobile'].toString();
-                      final isSent = _sentPhones.contains(phone);
+                      final orderId = order['orderId'].toString();
+                      final currentAddress = order['address'] ?? '';
+                      bool hasLocation = currentAddress != 'عمان - تحديد الموقع عبر الخريطة' && currentAddress.isNotEmpty;
 
                       return Card(
                         margin: const EdgeInsets.only(bottom: 8),
                         child: ListTile(
-                          leading: Icon(isSent ? Icons.check_circle : Icons.phone_android, color: isSent ? Colors.green : Colors.blueGrey),
-                          title: Text(phone, style: TextStyle(fontWeight: FontWeight.bold, decoration: isSent ? TextDecoration.lineThrough : null)),
-                          subtitle: Text('رقم الشحنة: ${order['orderId']}'),
+                          leading: Icon(
+                            hasLocation ? Icons.location_on : Icons.location_off, 
+                            color: hasLocation ? Colors.green : Colors.orange,
+                          ),
+                          title: Text(phone, style: const TextStyle(fontWeight: FontWeight.bold)),
+                          subtitle: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('رقم الشحنة: $orderId'),
+                              Text(
+                                'الموقع: $currentAddress', 
+                                style: TextStyle(fontSize: 12, color: hasLocation ? Colors.black87 : Colors.grey),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          ),
+                          isThreeLine: true,
                           trailing: ElevatedButton.icon(
-                            onPressed: () => _openWhatsApp(phone, setSheetState),
-                            icon: Icon(isSent ? Icons.done : Icons.send, size: 16),
-                            label: Text(isSent ? 'تم' : 'إرسال'),
+                            onPressed: () => _showLocationInputDialog(phone, orderId, setSheetState),
+                            icon: const Icon(Icons.edit_location_alt, size: 16),
+                            label: const Text('الموقع'),
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: isSent ? Colors.grey.shade300 : Colors.green,
-                              foregroundColor: isSent ? Colors.black54 : Colors.white,
-                              elevation: isSent ? 0 : 2,
+                              backgroundColor: hasLocation ? Colors.green.shade50 : Colors.green,
+                              foregroundColor: hasLocation ? Colors.green.shade800 : Colors.white,
+                              elevation: hasLocation ? 0 : 2,
                             ),
                           ),
-                          onTap: () { Navigator.pop(ctx); _showContactOptions(phone); },
+                          onTap: () { 
+                            Navigator.pop(ctx); 
+                            _showContactOptions(phone); 
+                          },
                         ),
                       );
                     },
@@ -338,6 +409,12 @@ class _HomeScreenState extends State<HomeScreen> {
       appBar: AppBar(
         title: const Text('مساعد التوصيل الاحترافي'),
         actions: [
+          // أيقونة مسار التوصيل الذكي الجديدة في الأعلى
+          IconButton(
+            icon: const Icon(Icons.alt_route_rounded),
+            tooltip: 'مسار التوصيل الذكي',
+            onPressed: () => _navigateToScreen(const RouteOptimizationScreen()),
+          ),
           IconButton(
             icon: const Icon(Icons.settings_outlined),
             onPressed: () => _navigateToScreen(const SettingsScreen()),
@@ -361,6 +438,14 @@ class _HomeScreenState extends State<HomeScreen> {
               leading: const Icon(Icons.home_outlined, color: Colors.green),
               title: const Text('الرئيسية'),
               onTap: () => Navigator.pop(context),
+            ),
+            ListTile(
+              leading: const Icon(Icons.alt_route_rounded, color: Colors.green),
+              title: const Text('مسار التوصيل الذكي'),
+              onTap: () {
+                Navigator.pop(context);
+                _navigateToScreen(const RouteOptimizationScreen());
+              },
             ),
             ListTile(
               leading: const Icon(Icons.list_alt_rounded, color: Colors.green),
@@ -427,7 +512,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ? 'لم يتم العثور على رقم هاتف'
                   : _extractedOrders.length == 1
                       ? 'التواصل مع العميل'
-                      : 'مراسلة الأرقام المكتشفة',
+                      : 'مراسلة وتحديد مواقع الأرقام',
               subtitle: _extractedOrders.isEmpty ? 'قم بالتقاط صورة أولاً لاستخراج الأرقام' : 'عدد الأرقام المتاحة: ${_extractedOrders.length}',
               isLoading: _isLoading,
             ),
@@ -437,7 +522,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // دالة مساعدة لتقليل تكرار تصميم البطاقات (Cards)
   Widget _buildActionCard({
     required VoidCallback? onTap,
     required Color color,
@@ -445,7 +529,8 @@ class _HomeScreenState extends State<HomeScreen> {
     required String title,
     required String subtitle,
     bool isPrimary = false,
-    Color iconColor = Colors.white, required bool isLoading,
+    Color iconColor = Colors.white,
+    required bool isLoading,
   }) {
     return Material(
       color: isPrimary ? color : Colors.white,

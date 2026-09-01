@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart' as intl;
-
-// ملاحظة: تأكد من استيراد ملف قاعدة البيانات الخاص بك هنا
-// import 'database_helper.dart';
+import 'database_helper.dart';
 
 class RecycleBinScreen extends StatefulWidget {
   const RecycleBinScreen({super.key});
@@ -24,9 +22,7 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
   Future<void> _loadRecycleBinData() async {
     setState(() => _isLoading = true);
     try {
-      // final data = await DatabaseHelper.instance.getRecycleBinItems();
-      await Future.delayed(const Duration(milliseconds: 500));
-      final List<Map<String, dynamic>> data = []; 
+      final data = await DatabaseHelper.instance.getRecycleBinItems();
 
       if (!mounted) return;
       setState(() {
@@ -83,7 +79,6 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
     Color successColor = Colors.green,
   }) async {
     try {
-      // await action(); // قم بإلغاء التفعيل عند ربط قاعدة البيانات
       await action();
       _showSnackBar(successMessage, successColor);
       _loadRecycleBinData();
@@ -94,7 +89,7 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
 
   Future<void> _restoreItem(int id) => _handleAction(
         action: () async {
-          // await DatabaseHelper.instance.restoreFromRecycleBin(id);
+          await DatabaseHelper.instance.restoreFromRecycleBin(id);
         },
         successMessage: 'تم استرجاع الشحنة بنجاح',
       );
@@ -110,7 +105,7 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
     if (confirm == true) {
       _handleAction(
         action: () async {
-          // await DatabaseHelper.instance.permanentlyDelete(id);
+          await DatabaseHelper.instance.permanentlyDelete(id);
         },
         successMessage: 'تم حذف الشحنة نهائياً',
         successColor: Colors.grey,
@@ -131,7 +126,7 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
     if (confirm == true) {
       _handleAction(
         action: () async {
-          // await DatabaseHelper.instance.clearRecycleBin();
+          await DatabaseHelper.instance.clearRecycleBin();
         },
         successMessage: 'تم تفريغ سلة المحذوفات بنجاح',
         successColor: Colors.grey,
