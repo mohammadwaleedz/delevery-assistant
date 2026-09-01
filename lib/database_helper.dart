@@ -1,6 +1,113 @@
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 
+// ============================================================================
+// 1. نموذج بيانات الشحنة (DeliveryOrder Model)
+// ============================================================================
+
+class DeliveryOrder {
+  final int? id; // المعرف الفريد بقاعدة البيانات
+  final String orderId;
+  final String customerName;
+  final String phone;
+  final String region;
+  final String address;
+  final String pageName;
+  final double totalAmount;
+  final double deliveryFee;
+  
+  String status;
+  String paymentMethod;
+  double actualCollectedAmount;
+  bool isFeeCollectedOnCancel;
+  String notes;
+  String? updatedAt;
+
+  DeliveryOrder({
+    this.id,
+    required this.orderId,
+    required this.customerName,
+    required this.phone,
+    required this.region,
+    required this.address,
+    required this.pageName,
+    required this.totalAmount,
+    required this.deliveryFee,
+    this.status = 'قيد التوصيل',
+    this.paymentMethod = 'نقداً',
+    double? actualCollectedAmount,
+    this.isFeeCollectedOnCancel = false,
+    this.notes = '',
+    this.updatedAt,
+  }) : actualCollectedAmount = actualCollectedAmount ?? totalAmount;
+
+  // تحويل البيانات من خريطة قاعدة البيانات Map إلى كائن DeliveryOrder
+  factory DeliveryOrder.fromMap(Map<String, dynamic> map) {
+    return DeliveryOrder(
+      id: map['id'],
+      orderId: map['orderId'] ?? '',
+      customerName: map['customerName'] ?? '',
+      phone: map['mobile'] ?? '',
+      region: map['address'] ?? '',
+      address: map['itemDescription'] ?? '',
+      pageName: '', 
+      totalAmount: (map['goodsValue'] as num?)?.toDouble() ?? 0.0,
+      deliveryFee: (map['deliveryFee'] as num?)?.toDouble() ?? 0.0,
+      status: map['status'] ?? 'قيد التوصيل',
+      paymentMethod: map['paymentMethod'] ?? 'نقداً',
+      actualCollectedAmount: (map['actualCollectedAmount'] as num?)?.toDouble() ?? 0.0,
+      isFeeCollectedOnCancel: (map['isFeeCollectedOnCancel'] == 1),
+      notes: map['notes'] ?? '',
+      updatedAt: map['updatedAt'],
+    );
+  }
+
+  // تحويل كائن DeliveryOrder إلى خريطة Map لحفظه أو تعديله في قاعدة البيانات
+  Map<String, dynamic> toMap() {
+    return {
+      if (id != null) 'id': id,
+      'orderId': orderId,
+      'customerName': customerName,
+      'mobile': phone,
+      'address': region,
+      'itemDescription': address,
+      'goodsValue': totalAmount,
+      'deliveryFee': deliveryFee,
+      'status': status,
+      'paymentMethod': paymentMethod,
+      'actualCollectedAmount': actualCollectedAmount,
+      'customCollectedAmount': actualCollectedAmount,
+      'isFeeCollectedOnCancel': isFeeCollectedOnCancel ? 1 : 0,
+      'notes': notes,
+      'updatedAt': updatedAt ?? DateTime.now().toIso8601String(),
+    };
+  }
+
+  // حساب مستحقات السائق
+  double get driverShare {
+    if (status == 'تم التوصيل') {
+      return deliveryFee;
+    } else if (status == 'ملغاة' && isFeeCollectedOnCancel) {
+      return deliveryFee;
+    }
+    return 0.0;
+  }
+
+  // حساب المستحق للمتجر
+  double get shopShare {
+    if (status == 'تم التوصيل') {
+      return actualCollectedAmount - deliveryFee;
+    } else if (status == 'ملغاة' && isFeeCollectedOnCancel) {
+      return 0.0;
+    }
+    return 0.0;
+  }
+}
+
+// ============================================================================
+// 2. كلاس إدارة قاعدة البيانات (DatabaseHelper Class)
+// ============================================================================
+
 class DatabaseHelper {
   static final DatabaseHelper instance = DatabaseHelper._init();
   static Database? _database;
@@ -19,7 +126,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 5, // تم رفع الإصدار لإنشاء جدول سلة المحذوفات تلقائياً
+      version: 6, // إصدار قاعدة البيانات 6
       onCreate: _createDB,
       onUpgrade: _upgradeDB,
     );
@@ -46,11 +153,12 @@ class DatabaseHelper {
         notes TEXT,
         lat REAL,
         lng REAL,
-        itemDescription TEXT
+        itemDescription TEXT,
+        updatedAt TEXT
       )
     ''');
 
-    // 2. جدول سلة المحذوفات بنفس البنية
+    // 2. جدول سلة المحذوفات
     await db.execute('''
       CREATE TABLE recycle_bin (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -70,7 +178,8 @@ class DatabaseHelper {
         notes TEXT,
         lat REAL,
         lng REAL,
-        itemDescription TEXT
+        itemDescription TEXT,
+        updatedAt TEXT
       )
     ''');
   }
@@ -94,17 +203,15 @@ class DatabaseHelper {
         'ALTER TABLE manifest ADD COLUMN lng REAL',
         'ALTER TABLE manifest ADD COLUMN itemDescription TEXT',
         'ALTER TABLE manifest ADD COLUMN status TEXT DEFAULT "قيد التوصيل"',
+        'ALTER TABLE manifest ADD COLUMN updatedAt TEXT',
       ];
 
       for (var query in alterQueries) {
         try {
           await db.execute(query);
-        } catch (_) {
-          // يتجاهل الخطأ إذا كان العمود مضافاً مسبقاً
-        }
+        } catch (_) {}
       }
 
-      // إضافة جدول سلة المحذوفات في الترقية إلى الإصدار 5
       if (oldVersion < 5) {
         await db.execute('''
           CREATE TABLE IF NOT EXISTS recycle_bin (
@@ -125,9 +232,16 @@ class DatabaseHelper {
             notes TEXT,
             lat REAL,
             lng REAL,
-            itemDescription TEXT
+            itemDescription TEXT,
+            updatedAt TEXT
           )
         ''');
+      }
+
+      if (oldVersion < 6) {
+        try {
+          await db.execute('ALTER TABLE recycle_bin ADD COLUMN updatedAt TEXT');
+        } catch (_) {}
       }
     }
   }
@@ -145,14 +259,17 @@ class DatabaseHelper {
   }
 
   // ==========================================
-  //     دوال جدول الشحنات الرئيسي (Manifest)
+  //    دوال جدول الشحنات الرئيسي (Manifest)
   // ==========================================
 
   Future<int> insertManifestItem(Map<String, dynamic> row) async {
     final db = await instance.database;
+    final data = _normalizeRowData(row);
+    data['updatedAt'] ??= DateTime.now().toIso8601String();
+
     return await db.insert(
       'manifest',
-      _normalizeRowData(row),
+      data,
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
   }
@@ -169,11 +286,20 @@ class DatabaseHelper {
     }).toList();
   }
 
+  // جلب العناصر على شكل قائمة كائنات DeliveryOrder جاهزة الاستخدام
+  Future<List<DeliveryOrder>> getDeliveryOrders() async {
+    final maps = await getManifestItems();
+    return maps.map((map) => DeliveryOrder.fromMap(map)).toList();
+  }
+
   Future<int> updateStatus(int id, String newStatus) async {
     final db = await instance.database;
     return await db.update(
       'manifest',
-      {'status': newStatus},
+      {
+        'status': newStatus,
+        'updatedAt': DateTime.now().toIso8601String(),
+      },
       where: 'id = ?',
       whereArgs: [id],
     );
@@ -181,9 +307,12 @@ class DatabaseHelper {
 
   Future<int> updateManifestItemData(int id, Map<String, dynamic> row) async {
     final db = await instance.database;
+    final data = _normalizeRowData(row);
+    data['updatedAt'] = DateTime.now().toIso8601String();
+
     return await db.update(
       'manifest',
-      _normalizeRowData(row),
+      data,
       where: 'id = ?',
       whereArgs: [id],
     );
@@ -202,14 +331,15 @@ class DatabaseHelper {
     return 0;
   }
 
-  // نقل الشحنة إلى سلة المحذوفات بدلاً من مسحها فوراً
+  // نقل الشحنة إلى سلة المحذوفات
   Future<void> deleteManifestItem(int id) async {
     final db = await instance.database;
     final item = await db.query('manifest', where: 'id = ?', whereArgs: [id]);
 
     if (item.isNotEmpty) {
       var itemData = Map<String, dynamic>.from(item.first);
-      itemData.remove('id'); // إزالة ID القديم ليتم إنشاؤه تلقائياً في السلة
+      itemData.remove('id');
+      itemData['updatedAt'] = DateTime.now().toIso8601String();
 
       await db.insert('recycle_bin', itemData);
       await db.delete('manifest', where: 'id = ?', whereArgs: [id]);
@@ -225,10 +355,9 @@ class DatabaseHelper {
   Future<int> clearAllItems() async => await clearManifestItems();
 
   // ==========================================
-  //     دوال سلة المحذوفات (Recycle Bin)
+  //    دوال سلة المحذوفات (Recycle Bin)
   // ==========================================
 
-  // جلب العناصر من سلة المحذوفات
   Future<List<Map<String, dynamic>>> getRecycleBinItems() async {
     final db = await instance.database;
     final List<Map<String, dynamic>> items =
@@ -241,27 +370,25 @@ class DatabaseHelper {
     }).toList();
   }
 
-  // استعادة الشحنة من سلة المحذوفات إلى الكشف الرئيسي
   Future<void> restoreManifestItem(int id) async {
     final db = await instance.database;
     final item = await db.query('recycle_bin', where: 'id = ?', whereArgs: [id]);
 
     if (item.isNotEmpty) {
       var itemData = Map<String, dynamic>.from(item.first);
-      itemData.remove('id'); // إزالة المعرف القديم
+      itemData.remove('id');
+      itemData['updatedAt'] = DateTime.now().toIso8601String();
 
       await db.insert('manifest', itemData);
       await db.delete('recycle_bin', where: 'id = ?', whereArgs: [id]);
     }
   }
 
-  // حذف نهائي لشحنة محددة من السلة
   Future<int> permanentlyDeleteManifestItem(int id) async {
     final db = await instance.database;
     return await db.delete('recycle_bin', where: 'id = ?', whereArgs: [id]);
   }
 
-  // تفريغ سلة المحذوفات كاملاً
   Future<int> clearRecycleBin() async {
     final db = await instance.database;
     return await db.delete('recycle_bin');

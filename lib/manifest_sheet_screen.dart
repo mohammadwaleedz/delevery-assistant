@@ -14,7 +14,7 @@ class ManifestSheetScreen extends StatefulWidget {
 
 class _ManifestSheetScreenState extends State<ManifestSheetScreen> {
   List<Map<String, dynamic>> _manifestItems = [];
-  final Set<int> _selectedIds = {}; // لتخزين معرفات الشحنات المحددة
+  final Set<int> _selectedIds = {};
   bool _isLoading = true;
 
   final List<String> _statusOptions = [
@@ -36,7 +36,6 @@ class _ManifestSheetScreenState extends State<ManifestSheetScreen> {
     _loadManifestData();
   }
 
-  // تحميل الشحنات مع إعادة الترتيب تلقائياً (قيد التوصيل أولاً ثم بقية الحالات)
   Future<void> _loadManifestData() async {
     setState(() => _isLoading = true);
     final data = await DatabaseHelper.instance.getManifestItems();
@@ -58,7 +57,6 @@ class _ManifestSheetScreenState extends State<ManifestSheetScreen> {
     });
   }
 
-  // إرسال الشحنات المحددة إلى سلة المحذوفات بعد التأكيد
   Future<void> _confirmAndMoveToRecycleBin() async {
     if (_selectedIds.isEmpty) return;
 
@@ -84,10 +82,13 @@ class _ManifestSheetScreenState extends State<ManifestSheetScreen> {
       ),
     );
 
+    if (!mounted) return;
+
     if (confirm == true) {
       for (int id in _selectedIds) {
         await DatabaseHelper.instance.deleteManifestItem(id);
       }
+      if (!mounted) return;
       setState(() {
         _selectedIds.clear();
       });
@@ -185,53 +186,52 @@ class _ManifestSheetScreenState extends State<ManifestSheetScreen> {
       text: defaultVal.toStringAsFixed(2),
     );
 
-    double? customAmount;
-    try {
-      customAmount = await showDialog<double>(
-        context: context,
-        barrierDismissible: false,
-        builder: (dialogContext) {
-          return Directionality(
-            textDirection: TextDirection.rtl,
-            child: AlertDialog(
-              title: const Text('المبلغ المحصل من العميل'),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('الحالة: $newStatus', style: const TextStyle(fontSize: 13, color: Colors.grey)),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: controller,
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    autofocus: true,
-                    decoration: const InputDecoration(
-                      labelText: 'أدخل المبلغ المحصل فعلياً (د.أ)',
-                      border: OutlineInputBorder(),
-                    ),
+    final double? customAmount = await showDialog<double>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return Directionality(
+          textDirection: TextDirection.rtl,
+          child: AlertDialog(
+            title: const Text('المبلغ المحصل من العميل'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('الحالة: $newStatus', style: const TextStyle(fontSize: 13, color: Colors.grey)),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: controller,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  autofocus: true,
+                  decoration: const InputDecoration(
+                    labelText: 'أدخل المبلغ المحصل فعلياً (د.أ)',
+                    border: OutlineInputBorder(),
                   ),
-                ],
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(dialogContext, null),
-                  child: const Text('إلغاء'),
-                ),
-                ElevatedButton(
-                  onPressed: () {
-                    double? value = double.tryParse(controller.text);
-                    Navigator.pop(dialogContext, value ?? 0.0);
-                  },
-                  child: const Text('حفظ'),
                 ),
               ],
             ),
-          );
-        },
-      );
-    } finally {
-      controller.dispose();
-    }
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, null),
+                child: const Text('إلغاء'),
+              ),
+              ElevatedButton(
+                onPressed: () {
+                  double? value = double.tryParse(controller.text);
+                  Navigator.pop(dialogContext, value ?? 0.0);
+                },
+                child: const Text('حفظ'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+
+    controller.dispose();
+
+    if (!mounted) return;
 
     if (customAmount != null) {
       int id = item['id'];
@@ -262,7 +262,6 @@ class _ManifestSheetScreenState extends State<ManifestSheetScreen> {
     await _loadManifestData();
   }
 
-  // تصدير PDF يدعم الصفحات المتعددة تلقائياً
   Future<void> _printOrSharePdf() async {
     try {
       final pdf = pw.Document();
@@ -649,30 +648,25 @@ class _ManifestSheetScreenState extends State<ManifestSheetScreen> {
                                               ),
                                             ],
                                           ),
-                                          Row(
-                                            children: [
-                                              const Text('الحالة: ', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                                              DropdownButton<String>(
-                                                value: _statusOptions.contains(currentStatus) ? currentStatus : 'قيد التوصيل',
-                                                style: TextStyle(
-                                                  fontWeight: FontWeight.bold,
-                                                  color: _getStatusColor(currentStatus),
-                                                  fontSize: 13,
-                                                ),
-                                                underline: Container(),
-                                                items: _statusOptions.map((String value) {
-                                                  return DropdownMenuItem<String>(
-                                                    value: value,
-                                                    child: Text(value, style: TextStyle(color: _getStatusColor(value))),
-                                                  );
-                                                }).toList(),
-                                                onChanged: (String? newValue) {
-                                                  if (newValue != null && item['id'] != null) {
-                                                    _updateItemStatus(item, newValue);
-                                                  }
-                                                },
-                                              ),
-                                            ],
+                                          DropdownButton<String>(
+                                            value: _statusOptions.contains(currentStatus) ? currentStatus : 'قيد التوصيل',
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                              color: _getStatusColor(currentStatus),
+                                              fontSize: 13,
+                                            ),
+                                            underline: Container(),
+                                            items: _statusOptions.map((String value) {
+                                              return DropdownMenuItem<String>(
+                                                value: value,
+                                                child: Text(value),
+                                              );
+                                            }).toList(),
+                                            onChanged: (String? newValue) {
+                                              if (newValue != null && item['id'] != null) {
+                                                _updateItemStatus(item, newValue);
+                                              }
+                                            },
                                           ),
                                         ],
                                       ),

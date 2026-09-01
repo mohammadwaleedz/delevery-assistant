@@ -25,7 +25,7 @@ dependencies:
   pdf: ^3.10.8
   printing: ^5.13.0
   sqflite: ^2.3.3+1
-  path: ^1.9.0 # أضف هذا السطر هنا
+  path: ^1.9.0
 
 dev_dependencies:
   flutter_test:

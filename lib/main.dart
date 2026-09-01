@@ -2,12 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'manifest_sheet_screen.dart';
 import 'database_helper.dart';
 import 'security_service.dart';
 import 'settings_screen.dart';
+import 'manifest_sheet_screen.dart' as manifest_file;
+import 'recycle_bin_screen.dart' as recycle_file;
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   runApp(const MyApp());
 }
@@ -51,11 +52,17 @@ class _HomeScreenState extends State<HomeScreen> {
     _checkSecurity();
   }
 
+  @override
+  void dispose() {
+    _pinInputController.dispose();
+    super.dispose();
+  }
+
   Future<void> _checkSecurity() async {
     bool hasPin = await SecurityService.isPinSet();
+    if (!mounted) return;
     setState(() {
       _hasPinSet = hasPin;
-      // إذا لم يقم المستخدم بتعيين كلمة مرور بعد، يفتح التطبيق مباشرة
       _isAuthenticated = !hasPin; 
     });
   }
@@ -72,6 +79,14 @@ class _HomeScreenState extends State<HomeScreen> {
     } else {
       _showMessage('كلمة المرور غير صحيحة!');
     }
+  }
+
+  void _navigateToScreen(Widget screen) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => screen),
+    );
+    _checkSecurity();
   }
 
   void _showImageSourceDialog() {
@@ -127,6 +142,7 @@ class _HomeScreenState extends State<HomeScreen> {
       final matches = phoneRegex.allMatches(recognizedText.text).map((m) => m.group(0)!).toSet().toList();
 
       List<Map<String, dynamic>> tempOrders = [];
+      final nowIso = DateTime.now().toIso8601String();
 
       for (int i = 0; i < matches.length; i++) {
         final orderData = {
@@ -137,6 +153,7 @@ class _HomeScreenState extends State<HomeScreen> {
           'collectionAmount': 15.0,
           'itemDescription': 'طرد شحنة توصيل مستخرج',
           'status': 'قيد التوصيل',
+          'updatedAt': nowIso,
         };
 
         await DatabaseHelper.instance.insertManifestItem(orderData);
@@ -180,7 +197,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  Future<void> _openWhatsApp(String phone) async {
+  Future<void> _openWhatsApp(String phone, [StateSetter? setSheetState]) async {
     String cleanPhone = phone.replaceAll(RegExp(r'[^\d]'), '');
     if (cleanPhone.startsWith('0')) {
       cleanPhone = '962${cleanPhone.substring(1)}';
@@ -194,7 +211,12 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       if (await canLaunchUrl(uri)) {
         if (mounted) {
-          setState(() => _sentPhones.add(phone));
+          setState(() {
+            _sentPhones.add(phone);
+          });
+          if (setSheetState != null) {
+            setSheetState(() {});
+          }
         }
         await launchUrl(uri, mode: LaunchMode.externalApplication);
       } else {
@@ -288,10 +310,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             title: Text(phone, style: TextStyle(fontWeight: FontWeight.bold, decoration: isSent ? TextDecoration.lineThrough : null)),
                             subtitle: Text('رقم الشحنة: ${order['orderId']}'),
                             trailing: ElevatedButton.icon(
-                              onPressed: () async {
-                                await _openWhatsApp(phone);
-                                setSheetState(() {});
-                              },
+                              onPressed: () => _openWhatsApp(phone, setSheetState),
                               icon: Icon(isSent ? Icons.done : Icons.send, size: 16),
                               label: Text(isSent ? 'تم' : 'إرسال'),
                               style: ElevatedButton.styleFrom(
@@ -320,7 +339,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // شاشة الفتح بكلمة المرور
     if (!_isAuthenticated && _hasPinSet) {
       return Scaffold(
         body: Padding(
@@ -365,89 +383,149 @@ class _HomeScreenState extends State<HomeScreen> {
       );
     }
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('مساعد التوصيل'),
-        centerTitle: true,
-        backgroundColor: Colors.green,
-        foregroundColor: Colors.white,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.settings),
-            onPressed: () async {
-              await Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const SettingsScreen()),
-              );
-              _checkSecurity(); // تحديث حالة كلمة المرور عند العودة
-            },
+    return DefaultTabController(
+      length: 3,
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('مساعد التوصيل'),
+          centerTitle: true,
+          backgroundColor: Colors.green,
+          foregroundColor: Colors.white,
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.settings),
+              onPressed: () => _navigateToScreen(const SettingsScreen()),
+            ),
+          ],
+          bottom: const TabBar(
+            indicatorColor: Colors.white,
+            labelColor: Colors.white,
+            unselectedLabelColor: Colors.white70,
+            tabs: [
+              Tab(icon: Icon(Icons.home), text: 'الرئيسية'),
+              Tab(icon: Icon(Icons.assignment), text: 'الكشف'),
+              Tab(icon: Icon(Icons.delete_outline), text: 'المحذوفات'),
+            ],
           ),
-        ],
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
+        ),
+        drawer: Drawer(
+          child: ListView(
+            padding: EdgeInsets.zero,
+            children: [
+              const DrawerHeader(
+                decoration: BoxDecoration(color: Colors.green),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.local_shipping, size: 48, color: Colors.white),
+                    SizedBox(height: 10),
+                    Text(
+                      'مساعد التوصيل',
+                      style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+                    ),
+                  ],
+                ),
+              ),
+              ListTile(
+                leading: const Icon(Icons.home, color: Colors.green),
+                title: const Text('الرئيسية'),
+                onTap: () => Navigator.pop(context),
+              ),
+              ListTile(
+                leading: const Icon(Icons.assignment, color: Colors.blueGrey),
+                title: const Text('كشف التوصيل (Manifest)'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _navigateToScreen(const manifest_file.ManifestSheetScreen());
+                },
+              ),
+              const Divider(),
+              ListTile(
+                leading: const Icon(Icons.delete_outline, color: Colors.teal),
+                title: const Text('سلة المحذوفات'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _navigateToScreen(const recycle_file.RecycleBinScreen());
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.settings, color: Colors.grey),
+                title: const Text('الإعدادات'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _navigateToScreen(const SettingsScreen());
+                },
+              ),
+            ],
+          ),
+        ),
+        body: TabBarView(
           children: [
-            ElevatedButton.icon(
-              onPressed: _isLoading ? null : _showImageSourceDialog,
-              icon: _isLoading 
-                  ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                  : const Icon(Icons.add_a_photo),
-              label: Text(_isLoading ? 'جاري قراءة الصورة...' : 'إضافة صورة (كاميرا / معرض)'),
-              style: ElevatedButton.styleFrom(
-                minimumSize: const Size.fromHeight(50),
-                backgroundColor: Colors.green,
-                foregroundColor: Colors.white,
+            SingleChildScrollView(
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  children: [
+                    ElevatedButton.icon(
+                      onPressed: _isLoading ? null : _showImageSourceDialog,
+                      icon: _isLoading 
+                          ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                          : const Icon(Icons.add_a_photo),
+                      label: Text(_isLoading ? 'جاري قراءة الصورة...' : 'إضافة صورة (كاميرا / معرض)'),
+                      style: ElevatedButton.styleFrom(
+                        minimumSize: const Size.fromHeight(50),
+                        backgroundColor: Colors.green,
+                        foregroundColor: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    ElevatedButton.icon(
+                      onPressed: () => _navigateToScreen(const manifest_file.ManifestSheetScreen()),
+                      icon: const Icon(Icons.assignment, color: Colors.white),
+                      label: const Text('عرض كشف التوصيل المالي (Manifest)'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.blueGrey.shade800,
+                        foregroundColor: Colors.white,
+                        minimumSize: const Size.fromHeight(50),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    ElevatedButton.icon(
+                      onPressed: _extractedOrders.isEmpty || _isLoading
+                          ? null
+                          : () {
+                              if (_extractedOrders.length == 1) {
+                                _showContactOptions(_extractedOrders.first['mobile'].toString());
+                              } else {
+                                _showPhonesDialog();
+                              }
+                            },
+                      icon: Icon(
+                        _extractedOrders.isEmpty ? Icons.person_off : Icons.contact_phone,
+                        color: _extractedOrders.isEmpty ? Colors.grey.shade600 : Colors.white,
+                      ),
+                      label: Text(
+                        _extractedOrders.isEmpty
+                            ? 'لم يتم العثور على رقم هاتف'
+                            : _extractedOrders.length == 1
+                                ? 'التواصل مع العميل (${_extractedOrders.first['mobile']})'
+                                : 'مراسلة الأرقام المكتشفة (${_extractedOrders.length} أرقام)',
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: _extractedOrders.isEmpty ? Colors.grey.shade300 : Colors.green.shade700,
+                        foregroundColor: _extractedOrders.isEmpty ? Colors.grey.shade600 : Colors.white,
+                        disabledBackgroundColor: Colors.grey.shade300,
+                        disabledForegroundColor: Colors.grey.shade600,
+                        minimumSize: const Size.fromHeight(50),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
-            const SizedBox(height: 12),
-            ElevatedButton.icon(
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const ManifestSheetScreen(),
-                  ),
-                );
-              },
-              icon: const Icon(Icons.assignment, color: Colors.white),
-              label: const Text('عرض كشف التوصيل المالي (Manifest)'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.blueGrey.shade800,
-                foregroundColor: Colors.white,
-                minimumSize: const Size.fromHeight(50),
-              ),
-            ),
-            const SizedBox(height: 12),
-            ElevatedButton.icon(
-              onPressed: _extractedOrders.isEmpty || _isLoading
-                  ? null
-                  : () {
-                      if (_extractedOrders.length == 1) {
-                        _showContactOptions(_extractedOrders.first['mobile'].toString());
-                      } else {
-                        _showPhonesDialog();
-                      }
-                    },
-              icon: Icon(
-                _extractedOrders.isEmpty ? Icons.person_off : Icons.contact_phone,
-                color: _extractedOrders.isEmpty ? Colors.grey.shade600 : Colors.white,
-              ),
-              label: Text(
-                _extractedOrders.isEmpty
-                    ? 'لم يتم العثور على رقم هاتف'
-                    : _extractedOrders.length == 1
-                        ? 'التواصل مع العميل (${_extractedOrders.first['mobile']})'
-                        : 'مراسلة الأرقام المكتشفة (${_extractedOrders.length} أرقام)',
-              ),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: _extractedOrders.isEmpty ? Colors.grey.shade300 : Colors.green.shade700,
-                foregroundColor: _extractedOrders.isEmpty ? Colors.grey.shade600 : Colors.white,
-                disabledBackgroundColor: Colors.grey.shade300,
-                disabledForegroundColor: Colors.grey.shade600,
-                minimumSize: const Size.fromHeight(50),
-              ),
-            ),
+            const manifest_file.ManifestSheetScreen(),
+            const recycle_file.RecycleBinScreen(),
           ],
         ),
       ),
