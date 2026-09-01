@@ -17,7 +17,7 @@ class _ManifestSheetScreenState extends State<ManifestSheetScreen> {
   final Set<int> _selectedIds = {};
   bool _isLoading = true;
 
-  final List<String> _statusOptions = [
+  static const List<String> _statusOptions = [
     'قيد التوصيل',
     'تم التسليم',
     'مؤجل',
@@ -25,7 +25,7 @@ class _ManifestSheetScreenState extends State<ManifestSheetScreen> {
     'مرتجع / رفض الاستلام (رفض دفع التوصيل)',
   ];
 
-  final List<String> _paymentMethods = ['كاش', 'كليك'];
+  static const List<String> _paymentMethods = ['كاش', 'كليك'];
 
   @override
   void initState() {
@@ -34,16 +34,16 @@ class _ManifestSheetScreenState extends State<ManifestSheetScreen> {
   }
 
   Future<void> _loadManifestData() async {
+    if (!mounted) return;
     setState(() => _isLoading = true);
+    
     final data = await DatabaseHelper.instance.getManifestItems();
     if (!mounted) return;
 
-    List<Map<String, dynamic>> sortedList = List<Map<String, dynamic>>.from(data);
-    sortedList.sort((a, b) {
-      bool aPending = (a['status'] ?? 'قيد التوصيل') == 'قيد التوصيل';
-      bool bPending = (b['status'] ?? 'قيد التوصيل') == 'قيد التوصيل';
-      if (aPending && !bPending) return -1;
-      if (!aPending && bPending) return 1;
+    final sortedList = (data as List<Map<String, dynamic>>)..sort((a, b) {
+      final bool aPending = (a['status'] ?? 'قيد التوصيل') == 'قيد التوصيل';
+      final bool bPending = (b['status'] ?? 'قيد التوصيل') == 'قيد التوصيل';
+      if (aPending != bPending) return aPending ? -1 : 1;
       return (b['id'] ?? 0).compareTo(a['id'] ?? 0);
     });
 
@@ -58,7 +58,7 @@ class _ManifestSheetScreenState extends State<ManifestSheetScreen> {
 
   double _calculateCollected(Map<String, dynamic> item) {
     if (item['customCollectedAmount'] != null) return _parseDouble(item['customCollectedAmount']);
-    String status = item['status'] ?? 'قيد التوصيل';
+    final String status = item['status'] ?? 'قيد التوصيل';
     if (status == 'تم التسليم') return _parseDouble(item['collectionAmount']);
     if (status.contains('تم دفع التوصيل')) return _parseDouble(item['deliveryFee']);
     return 0.0;
@@ -66,7 +66,7 @@ class _ManifestSheetScreenState extends State<ManifestSheetScreen> {
 
   String _formatPhone(String? phone) {
     if (phone == null || phone.trim().isEmpty) return 'غير متوفر';
-    String cleaned = phone.trim().replaceAll(RegExp(r'\s+'), '');
+    final String cleaned = phone.trim().replaceAll(RegExp(r'\s+'), '');
     return (cleaned.length == 9 && !cleaned.startsWith('0')) ? '0$cleaned' : cleaned;
   }
 
@@ -77,7 +77,7 @@ class _ManifestSheetScreenState extends State<ManifestSheetScreen> {
 
   Future<void> _confirmDelete() async {
     if (_selectedIds.isEmpty) return;
-    bool? confirm = await showDialog<bool>(
+    final bool? confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => Directionality(
         textDirection: TextDirection.rtl,
@@ -97,7 +97,7 @@ class _ManifestSheetScreenState extends State<ManifestSheetScreen> {
     );
 
     if (confirm == true) {
-      for (int id in _selectedIds) {
+      for (final id in _selectedIds) {
         await DatabaseHelper.instance.deleteManifestItem(id);
       }
       setState(() => _selectedIds.clear());
@@ -109,14 +109,14 @@ class _ManifestSheetScreenState extends State<ManifestSheetScreen> {
     if (_selectedIds.isEmpty) return;
     String statusChoice = _statusOptions.first;
 
-    String? res = await showDialog<String>(
+    final String? res = await showDialog<String>(
       context: context,
       builder: (ctx) => Directionality(
         textDirection: TextDirection.rtl,
         child: AlertDialog(
           title: Text('تعديل حالة ${_selectedIds.length} شحنات'),
           content: DropdownButtonFormField<String>(
-            initialValue: statusChoice,
+            value: statusChoice,
             decoration: const InputDecoration(border: OutlineInputBorder()),
             items: _statusOptions.map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(),
             onChanged: (val) => statusChoice = val ?? statusChoice,
@@ -130,8 +130,8 @@ class _ManifestSheetScreenState extends State<ManifestSheetScreen> {
     );
 
     if (res != null) {
-      for (int id in _selectedIds) {
-        var item = _manifestItems.firstWhere((e) => e['id'] == id, orElse: () => {});
+      for (final id in _selectedIds) {
+        final item = _manifestItems.firstWhere((e) => e['id'] == id, orElse: () => {});
         double? customAmt;
         if (res.contains('مرتجع') || res.contains('رفض')) {
           customAmt = res.contains('تم دفع التوصيل') ? _parseDouble(item['deliveryFee']) : 0.0;
@@ -147,12 +147,12 @@ class _ManifestSheetScreenState extends State<ManifestSheetScreen> {
   }
 
   Future<void> _updateItem(Map<String, dynamic> item, String newStatus) async {
-    int id = item['id'];
+    final int id = item['id'];
     if (newStatus.contains('مرتجع') || newStatus.contains('رفض')) {
-      TextEditingController ctrl = TextEditingController(
+      final TextEditingController ctrl = TextEditingController(
         text: (newStatus.contains('تم دفع التوصيل') ? _parseDouble(item['deliveryFee']) : 0.0).toStringAsFixed(2),
       );
-      double? amt = await showDialog<double>(
+      final double? amt = await showDialog<double>(
         context: context,
         builder: (ctx) => Directionality(
           textDirection: TextDirection.rtl,
@@ -191,7 +191,7 @@ class _ManifestSheetScreenState extends State<ManifestSheetScreen> {
             headerDecoration: const pw.BoxDecoration(color: PdfColors.blueGrey800),
             cellStyle: pw.TextStyle(font: font, fontSize: 8),
             data: _manifestItems.asMap().entries.map((e) {
-              var item = e.value;
+              final item = e.value;
               return [
                 '${e.key + 1}',
                 item['orderId'] ?? '-',
@@ -211,9 +211,9 @@ class _ManifestSheetScreenState extends State<ManifestSheetScreen> {
 
   @override
   Widget build(BuildContext context) {
-    double totalReq = _manifestItems.fold(0, (s, i) => s + _parseDouble(i['collectionAmount']));
-    double totalColl = _manifestItems.fold(0, (s, i) => s + _calculateCollected(i));
-    bool isSelMode = _selectedIds.isNotEmpty;
+    final double totalReq = _manifestItems.fold(0, (s, i) => s + _parseDouble(i['collectionAmount']));
+    final double totalColl = _manifestItems.fold(0, (s, i) => s + _calculateCollected(i));
+    final bool isSelMode = _selectedIds.isNotEmpty;
 
     return Directionality(
       textDirection: TextDirection.rtl,
@@ -267,11 +267,11 @@ class _ManifestSheetScreenState extends State<ManifestSheetScreen> {
                         child: ListView.builder(
                           itemCount: _manifestItems.length,
                           itemBuilder: (context, index) {
-                            var item = _manifestItems[index];
-                            int id = item['id'];
-                            bool selected = _selectedIds.contains(id);
-                            String status = item['status'] ?? 'قيد التوصيل';
-                            String phone = _formatPhone(item['mobile']);
+                            final item = _manifestItems[index];
+                            final int id = item['id'];
+                            final bool selected = _selectedIds.contains(id);
+                            final String status = item['status'] ?? 'قيد التوصيل';
+                            final String phone = _formatPhone(item['mobile']);
 
                             return Card(
                               color: selected ? Colors.blue.shade50 : Colors.white,

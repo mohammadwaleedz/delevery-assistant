@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart'; // تمت الإضافة لدعم تقييد الأرقام
+import 'package:flutter/services.dart';
 import 'security_service.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -36,7 +36,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _checkPinStatus() async {
-    bool isSet = await SecurityService.isPinSet();
+    final isSet = await SecurityService.isPinSet();
     if (!mounted) return;
     setState(() {
       _isPinSet = isSet;
@@ -44,12 +44,39 @@ class _SettingsScreenState extends State<SettingsScreen> {
     });
   }
 
+  void _showMessage(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(msg), behavior: SnackBarBehavior.floating),
+    );
+  }
+
+  void _clearControllers() {
+    _oldPinController.clear();
+    _newPinController.clear();
+    _confirmPinController.clear();
+  }
+
+  Future<bool> _verifyOldPinIfSet() async {
+    if (!_isPinSet) return true;
+    final oldPin = _oldPinController.text.trim();
+    if (oldPin.isEmpty) {
+      _showMessage('يرجى إدخال كلمة المرور القديمة في حقلها المخصص أولاً');
+      return false;
+    }
+    final isValid = await SecurityService.verifyPin(oldPin);
+    if (!isValid) {
+      _showMessage('كلمة المرور القديمة غير صحيحة!');
+      return false;
+    }
+    return true;
+  }
+
   Future<void> _saveOrUpdatePin() async {
     FocusScope.of(context).unfocus();
 
-    String oldPin = _oldPinController.text.trim();
-    String newPin = _newPinController.text.trim();
-    String confirmPin = _confirmPinController.text.trim();
+    final newPin = _newPinController.text.trim();
+    final confirmPin = _confirmPinController.text.trim();
 
     if (newPin.isEmpty || newPin.length < 4) {
       _showMessage('كلمة المرور الجديدة يجب أن تكون 4 أرقام على الأقل');
@@ -61,46 +88,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
       return;
     }
 
-    if (_isPinSet) {
-      bool isOldValid = await SecurityService.verifyPin(oldPin);
-      if (!isOldValid) {
-        _showMessage('كلمة المرور القديمة غير صحيحة!');
-        return;
-      }
-    }
+    if (!await _verifyOldPinIfSet()) return;
 
     await SecurityService.setPin(newPin);
     if (!mounted) return;
 
     _showMessage('تم حفظ كلمة المرور بنجاح');
-
-    _oldPinController.clear();
-    _newPinController.clear();
-    _confirmPinController.clear();
-
+    _clearControllers();
     _checkPinStatus();
   }
 
   Future<void> _removePin() async {
     FocusScope.of(context).unfocus();
-    String oldPin = _oldPinController.text.trim();
-    
-    if (_isPinSet && oldPin.isEmpty) {
-      _showMessage('يرجى إدخال كلمة المرور القديمة في حقلها المخصص أولاً');
-      return;
-    }
 
-    if (_isPinSet) {
-      bool isOldValid = await SecurityService.verifyPin(oldPin);
-      if (!isOldValid) {
-        _showMessage('كلمة المرور القديمة غير صحيحة!');
-        return;
-      }
-    }
-
+    if (!await _verifyOldPinIfSet()) return;
     if (!mounted) return;
 
-    final bool? confirm = await showDialog<bool>(
+    final confirm = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => Directionality(
         textDirection: TextDirection.rtl,
@@ -126,19 +130,34 @@ class _SettingsScreenState extends State<SettingsScreen> {
       await SecurityService.clearPin();
       if (!mounted) return;
 
-      _oldPinController.clear();
-      _newPinController.clear();
-      _confirmPinController.clear();
-
+      _clearControllers();
       _showMessage('تمت إزالة كلمة المرور بنجاح');
       _checkPinStatus();
     }
   }
 
-  void _showMessage(String msg) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(msg), behavior: SnackBarBehavior.floating),
+  // دالة مساعدة لإنشاء حقول الإدخال لمنع تكرار الأكواد (DRY Principle)
+  Widget _buildPinTextField({
+    required TextEditingController controller,
+    required String labelText,
+    required IconData prefixIcon,
+    required bool obscureText,
+    required VoidCallback onToggleVisibility,
+  }) {
+    return TextField(
+      controller: controller,
+      obscureText: obscureText,
+      keyboardType: TextInputType.number,
+      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+      decoration: InputDecoration(
+        labelText: labelText,
+        border: const OutlineInputBorder(),
+        prefixIcon: Icon(prefixIcon),
+        suffixIcon: IconButton(
+          icon: Icon(obscureText ? Icons.visibility_off : Icons.visibility),
+          onPressed: onToggleVisibility,
+        ),
+      ),
     );
   }
 
@@ -163,60 +182,32 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                     ),
                     const SizedBox(height: 16),
-
                     if (_isPinSet) ...[
-                      TextField(
+                      _buildPinTextField(
                         controller: _oldPinController,
+                        labelText: 'كلمة المرور القديمة',
+                        prefixIcon: Icons.lock_clock,
                         obscureText: _hideOldPin,
-                        keyboardType: TextInputType.number,
-                        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                        decoration: InputDecoration(
-                          labelText: 'كلمة المرور القديمة',
-                          border: const OutlineInputBorder(),
-                          prefixIcon: const Icon(Icons.lock_clock),
-                          suffixIcon: IconButton(
-                            icon: Icon(_hideOldPin ? Icons.visibility_off : Icons.visibility),
-                            onPressed: () => setState(() => _hideOldPin = !_hideOldPin),
-                          ),
-                        ),
+                        onToggleVisibility: () => setState(() => _hideOldPin = !_hideOldPin),
                       ),
                       const SizedBox(height: 12),
                     ],
-
-                    TextField(
+                    _buildPinTextField(
                       controller: _newPinController,
+                      labelText: 'كلمة المرور الجديدة',
+                      prefixIcon: Icons.lock_outline,
                       obscureText: _hideNewPin,
-                      keyboardType: TextInputType.number,
-                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                      decoration: InputDecoration(
-                        labelText: 'كلمة المرور الجديدة',
-                        border: const OutlineInputBorder(),
-                        prefixIcon: const Icon(Icons.lock_outline),
-                        suffixIcon: IconButton(
-                          icon: Icon(_hideNewPin ? Icons.visibility_off : Icons.visibility),
-                          onPressed: () => setState(() => _hideNewPin = !_hideNewPin),
-                        ),
-                      ),
+                      onToggleVisibility: () => setState(() => _hideNewPin = !_hideNewPin),
                     ),
                     const SizedBox(height: 12),
-
-                    TextField(
+                    _buildPinTextField(
                       controller: _confirmPinController,
+                      labelText: 'تأكيد كلمة المرور الجديدة',
+                      prefixIcon: Icons.lock_reset,
                       obscureText: _hideConfirmPin,
-                      keyboardType: TextInputType.number,
-                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                      decoration: InputDecoration(
-                        labelText: 'تأكيد كلمة المرور الجديدة',
-                        border: const OutlineInputBorder(),
-                        prefixIcon: const Icon(Icons.lock_reset),
-                        suffixIcon: IconButton(
-                          icon: Icon(_hideConfirmPin ? Icons.visibility_off : Icons.visibility),
-                          onPressed: () => setState(() => _hideConfirmPin = !_hideConfirmPin),
-                        ),
-                      ),
+                      onToggleVisibility: () => setState(() => _hideConfirmPin = !_hideConfirmPin),
                     ),
                     const SizedBox(height: 20),
-
                     ElevatedButton.icon(
                       onPressed: _saveOrUpdatePin,
                       icon: const Icon(Icons.save),
@@ -227,7 +218,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         minimumSize: const Size.fromHeight(50),
                       ),
                     ),
-
                     if (_isPinSet) ...[
                       const SizedBox(height: 12),
                       OutlinedButton.icon(

@@ -5,7 +5,7 @@ import 'package:intl/intl.dart' as intl;
 // import 'database_helper.dart';
 
 class RecycleBinScreen extends StatefulWidget {
-  const RecycleBinScreen({Key? key}) : super(key: key);
+  const RecycleBinScreen({super.key});
 
   @override
   State<RecycleBinScreen> createState() => _RecycleBinScreenState();
@@ -21,81 +21,36 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
     _loadRecycleBinData();
   }
 
-  // تحميل العناصر المحذوفة من قاعدة البيانات
   Future<void> _loadRecycleBinData() async {
     setState(() => _isLoading = true);
     try {
-      // استبدال هذا الاستدعاء بالطريقة الصحيحة في DatabaseHelper لديك
       // final data = await DatabaseHelper.instance.getRecycleBinItems();
-      
-      // بيانات تجريبية للعرض (يمكنك إزالتها واستخدام الدالة الحقيقية)
       await Future.delayed(const Duration(milliseconds: 500));
       final List<Map<String, dynamic>> data = []; 
 
+      if (!mounted) return;
       setState(() {
         _deletedItems = data;
         _isLoading = false;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() => _isLoading = false);
       _showSnackBar('حدث خطأ أثناء تحميل سلة المحذوفات: $e', Colors.red);
     }
   }
 
-  // استرجاع شحنة محددة إلى الكشف الرئيسي
-  Future<void> _restoreItem(int id) async {
-    try {
-      // await DatabaseHelper.instance.restoreFromRecycleBin(id);
-      _showSnackBar('تم استرجاع الشحنة بنجاح', Colors.green);
-      _loadRecycleBinData();
-    } catch (e) {
-      _showSnackBar('فشل استرجاع الشحنة: $e', Colors.red);
-    }
-  }
-
-  // حذف شحنة نهائياً
-  Future<void> _permanentlyDelete(int id) async {
-    bool? confirm = await _showConfirmDialog(
-      title: 'حذف نهائي',
-      content: 'هل أنت متأكد من حذف هذه الشحنة نهائياً؟ لا يمكن التراجع عن هذا الإجراء.',
-      confirmText: 'حذف نهائي',
-      confirmColor: Colors.red,
+  void _showSnackBar(String message, Color color) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: color,
+        behavior: SnackBarBehavior.floating,
+      ),
     );
-
-    if (confirm == true) {
-      try {
-        // await DatabaseHelper.instance.permanentlyDelete(id);
-        _showSnackBar('تم حذف الشحنة نهائياً', Colors.grey);
-        _loadRecycleBinData();
-      } catch (e) {
-        _showSnackBar('فشل الحذف النهائي: $e', Colors.red);
-      }
-    }
   }
 
-  // تفريغ سلة المحذوفات بالكامل
-  Future<void> _emptyRecycleBin() async {
-    if (_deletedItems.isEmpty) return;
-
-    bool? confirm = await _showConfirmDialog(
-      title: 'تفريغ سلة المحذوفات',
-      content: 'هل أنت متأكد من رغبتك في حذف جميع العناصر المحذوفة نهائياً؟',
-      confirmText: 'تفريغ الكل',
-      confirmColor: Colors.red,
-    );
-
-    if (confirm == true) {
-      try {
-        // await DatabaseHelper.instance.clearRecycleBin();
-        _showSnackBar('تم تفريغ سلة المحذوفات بنجاح', Colors.grey);
-        _loadRecycleBinData();
-      } catch (e) {
-        _showSnackBar('فشل تفريغ السلة: $e', Colors.red);
-      }
-    }
-  }
-
-  // نافذة تأكيد عامة
   Future<bool?> _showConfirmDialog({
     required String title,
     required String content,
@@ -104,17 +59,17 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
   }) {
     return showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (ctx) => AlertDialog(
         title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
         content: Text(content),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context, false),
+            onPressed: () => Navigator.pop(ctx, false),
             child: const Text('إلغاء', style: TextStyle(color: Colors.grey)),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: confirmColor),
-            onPressed: () => Navigator.pop(context, true),
+            onPressed: () => Navigator.pop(ctx, true),
             child: Text(confirmText, style: const TextStyle(color: Colors.white)),
           ),
         ],
@@ -122,14 +77,66 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
     );
   }
 
-  void _showSnackBar(String message, Color color) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: color,
-        behavior: SnackBarBehavior.floating,
-      ),
+  Future<void> _handleAction({
+    required Future<void> Function() action,
+    required String successMessage,
+    Color successColor = Colors.green,
+  }) async {
+    try {
+      // await action(); // قم بإلغاء التفعيل عند ربط قاعدة البيانات
+      await action();
+      _showSnackBar(successMessage, successColor);
+      _loadRecycleBinData();
+    } catch (e) {
+      _showSnackBar('حدث خطأ: $e', Colors.red);
+    }
+  }
+
+  Future<void> _restoreItem(int id) => _handleAction(
+        action: () async {
+          // await DatabaseHelper.instance.restoreFromRecycleBin(id);
+        },
+        successMessage: 'تم استرجاع الشحنة بنجاح',
+      );
+
+  Future<void> _permanentlyDelete(int id) async {
+    final confirm = await _showConfirmDialog(
+      title: 'حذف نهائي',
+      content: 'هل أنت متأكد من حذف هذه الشحنة نهائياً؟ لا يمكن التراجع عن هذا الإجراء.',
+      confirmText: 'حذف نهائي',
+      confirmColor: Colors.red,
     );
+
+    if (confirm == true) {
+      _handleAction(
+        action: () async {
+          // await DatabaseHelper.instance.permanentlyDelete(id);
+        },
+        successMessage: 'تم حذف الشحنة نهائياً',
+        successColor: Colors.grey,
+      );
+    }
+  }
+
+  Future<void> _emptyRecycleBin() async {
+    if (_deletedItems.isEmpty) return;
+
+    final confirm = await _showConfirmDialog(
+      title: 'تفريغ سلة المحذوفات',
+      content: 'هل أنت متأكد من رغبتك في حذف جميع العناصر المحذوفة نهائياً؟',
+      confirmText: 'تفريغ الكل',
+      confirmColor: Colors.red,
+    );
+
+    if (confirm == true) {
+      _handleAction(
+        action: () async {
+          // await DatabaseHelper.instance.clearRecycleBin();
+        },
+        successMessage: 'تم تفريغ سلة المحذوفات بنجاح',
+        successColor: Colors.grey,
+      );
+    }
   }
 
   @override
@@ -176,6 +183,7 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
                       final phone = item['phone'] ?? 'لا يوجد هاتف';
                       final storeName = item['store_name'] ?? 'متجر عام';
                       final price = item['price'] ?? 0.0;
+                      final formattedPrice = intl.NumberFormat('#,##0.00').format(price);
 
                       return Card(
                         margin: const EdgeInsets.symmetric(vertical: 6),
@@ -185,7 +193,6 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
                           padding: const EdgeInsets.all(12.0),
                           child: Row(
                             children: [
-                              // أيقونة الشحنة
                               Container(
                                 padding: const EdgeInsets.all(10),
                                 decoration: BoxDecoration(
@@ -195,8 +202,6 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
                                 child: Icon(Icons.inventory_2_outlined, color: Colors.red.shade400),
                               ),
                               const SizedBox(width: 12),
-                              
-                              // تفاصيل الشحنة
                               Expanded(
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -206,18 +211,18 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
                                       style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                                     ),
                                     const SizedBox(height: 4),
-                                    Text('الهاتف: $phone | المتجر: $storeName',
-                                        style: TextStyle(color: Colors.grey.shade700, fontSize: 13)),
+                                    Text(
+                                      'الهاتف: $phone | المتجر: $storeName',
+                                      style: TextStyle(color: Colors.grey.shade700, fontSize: 13),
+                                    ),
                                     const SizedBox(height: 4),
                                     Text(
-                                      'المبلغ: ${intl.NumberFormat('#,##0.00').format(price)} د.أ',
+                                      'المبلغ: $formattedPrice د.أ',
                                       style: const TextStyle(color: Colors.teal, fontWeight: FontWeight.w600),
                                     ),
                                   ],
                                 ),
                               ),
-                              
-                              // أزرار التحكم (استرجاع وحذف نهائي)
                               Column(
                                 children: [
                                   IconButton(

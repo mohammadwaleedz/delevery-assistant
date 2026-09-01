@@ -2,14 +2,11 @@ import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 class SecurityService {
-  // تهيئة الإعدادات الآمنة لنظامي Android و iOS للحماية من الثغرات
-  static const _androidOptions = AndroidOptions(
-    encryptedSharedPreferences: true,
-  );
+  SecurityService._(); // منع إنشاء كائن من الفئة (Utility Class Pattern)
 
-  static const _iosOptions = IOSOptions(
-    accessibility: KeychainAccessibility.first_unlock,
-  );
+  // إعدادات التشفير المحسنة لنظامي التشغيل
+  static const _androidOptions = AndroidOptions(encryptedSharedPreferences: true);
+  static const _iosOptions = IOSOptions(accessibility: KeychainAccessibility.firstUnlock);
 
   static const _storage = FlutterSecureStorage(
     aOptions: _androidOptions,
@@ -21,9 +18,9 @@ class SecurityService {
   /// فحص هل قام المستخدم بإنشاء كلمة مرور سابقاً
   static Future<bool> isPinSet() async {
     try {
-      String? pin = await _storage.read(key: _pinKey);
-      return pin != null && pin.isNotEmpty;
-    } catch (e) {
+      final pin = await _storage.read(key: _pinKey);
+      return pin?.isNotEmpty ?? false;
+    } catch (_) {
       return false;
     }
   }
@@ -33,7 +30,6 @@ class SecurityService {
     try {
       await _storage.write(key: _pinKey, value: newPin);
     } on PlatformException {
-      // تم حذف المتغير e للتخلص من التحذير (Unused catch clause)
       rethrow;
     }
   }
@@ -41,19 +37,19 @@ class SecurityService {
   /// التحقق من صحة كلمة المرور المدخلة
   static Future<bool> verifyPin(String enteredPin) async {
     try {
-      String? savedPin = await _storage.read(key: _pinKey);
+      final savedPin = await _storage.read(key: _pinKey);
       return savedPin == enteredPin;
-    } catch (e) {
+    } catch (_) {
       return false;
     }
   }
 
-  /// (إضافة جديدة) مسح كلمة المرور/إعادة ضبط رمز الأمان
+  /// مسح كلمة المرور / إعادة ضبط رمز الأمان
   static Future<void> clearPin() async {
     try {
       await _storage.delete(key: _pinKey);
-    } catch (e) {
-      // إهمال الخطأ إذا كان المفتاح غير موجود بالفعل
+    } catch (_) {
+      // تجاهل الأخطاء في حال لم يكن المفتاح موجوداً
     }
   }
 }

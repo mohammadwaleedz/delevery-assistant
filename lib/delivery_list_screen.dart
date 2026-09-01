@@ -24,7 +24,6 @@ class MyApp extends StatelessWidget {
 }
 
 // =================== الصفحة الرئيسية للتوصيل ===================
-
 class DriverOrdersScreen extends StatefulWidget {
   const DriverOrdersScreen({super.key});
 
@@ -36,7 +35,7 @@ class _DriverOrdersScreenState extends State<DriverOrdersScreen> {
   List<DeliveryOrder> _orders = [];
   bool _isLoading = true;
 
-  final Set<int> _selectedOrderDbIds = {}; // التحديد باستخدام ID قاعدة البيانات
+  final Set<int> _selectedOrderDbIds = {};
   String _searchQuery = '';
   String _filterStatus = 'الكل';
 
@@ -46,17 +45,16 @@ class _DriverOrdersScreenState extends State<DriverOrdersScreen> {
     _loadOrders();
   }
 
-  // جلب الطلبات من قاعدة البيانات
   Future<void> _loadOrders() async {
     setState(() => _isLoading = true);
     final orders = await DatabaseHelper.instance.getDeliveryOrders();
+    if (!mounted) return;
     setState(() {
       _orders = orders;
       _isLoading = false;
     });
   }
 
-  // القائمة المفلترة
   List<DeliveryOrder> get _filteredOrders {
     return _orders.where((order) {
       final matchesSearch = order.customerName.contains(_searchQuery) ||
@@ -71,7 +69,6 @@ class _DriverOrdersScreenState extends State<DriverOrdersScreen> {
     }).toList();
   }
 
-  // ملخص المبالغ
   double get _totalCollected =>
       _orders.fold(0.0, (sum, item) => sum + item.actualCollectedAmount);
 
@@ -81,7 +78,6 @@ class _DriverOrdersScreenState extends State<DriverOrdersScreen> {
   double get _totalShopPayable =>
       _orders.fold(0.0, (sum, item) => sum + item.shopShare);
 
-  // إرسال واتساب
   Future<void> _openWhatsApp(String phone, String name) async {
     String formattedPhone = phone.replaceAll(' ', '');
     if (formattedPhone.startsWith('0')) {
@@ -94,7 +90,6 @@ class _DriverOrdersScreenState extends State<DriverOrdersScreen> {
     }
   }
 
-  // إجراء اتصال
   Future<void> _makeCall(String phone) async {
     final Uri url = Uri.parse('tel:$phone');
     if (await canLaunchUrl(url)) {
@@ -102,7 +97,6 @@ class _DriverOrdersScreenState extends State<DriverOrdersScreen> {
     }
   }
 
-  // فتح التعديل وحفظ التغييرات في قاعدة البيانات
   void _showEditDialog(DeliveryOrder order) {
     showDialog(
       context: context,
@@ -114,14 +108,13 @@ class _DriverOrdersScreenState extends State<DriverOrdersScreen> {
               updatedOrder.id!,
               updatedOrder.toMap(),
             );
-            await _loadOrders(); // إعادة تحميل البيانات المحدثة
+            await _loadOrders();
           }
         },
       ),
     );
   }
 
-  // نقل الشحنات المحددة إلى سلة المهملات
   void _deleteSelectedOrders() {
     showDialog(
       context: context,
@@ -130,7 +123,7 @@ class _DriverOrdersScreenState extends State<DriverOrdersScreen> {
         child: AlertDialog(
           title: const Text('تأكيد الحذف'),
           content: Text(
-              'هل أنت تأكد من نقل (${_selectedOrderDbIds.length}) من الشحنات المحددة إلى سلة المهملات؟'),
+              'هل أنت متأكد من نقل (${_selectedOrderDbIds.length}) من الشحنات المحددة إلى سلة المهملات؟'),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx),
@@ -139,11 +132,12 @@ class _DriverOrdersScreenState extends State<DriverOrdersScreen> {
             ElevatedButton(
               style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
               onPressed: () async {
+                Navigator.pop(ctx);
                 for (int id in _selectedOrderDbIds) {
                   await DatabaseHelper.instance.deleteManifestItem(id);
                 }
-                _selectedOrderDbIds.clear();
-                await _loadOrders(); // إعادة رسم الشاشة بعد النقل
+                setState(() => _selectedOrderDbIds.clear());
+                await _loadOrders();
               },
               child: const Text('حذف', style: TextStyle(color: Colors.white)),
             ),
@@ -155,6 +149,8 @@ class _DriverOrdersScreenState extends State<DriverOrdersScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final filteredList = _filteredOrders;
+
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
@@ -180,21 +176,26 @@ class _DriverOrdersScreenState extends State<DriverOrdersScreen> {
             ? const Center(child: CircularProgressIndicator())
             : Column(
                 children: [
-                  // بطاقات ملخص الحسابات
-                  _buildSummaryHeader(),
-
-                  // شريط البحث والتصفية
-                  _buildFilterBar(),
-
-                  // قائمة الطلبات
+                  _SummarySection(
+                    totalCollected: _totalCollected,
+                    totalDriverFees: _totalDriverFees,
+                    totalShopPayable: _totalShopPayable,
+                  ),
+                  _FilterBarSection(
+                    searchQuery: _searchQuery,
+                    filterStatus: _filterStatus,
+                    onSearchChanged: (val) => setState(() => _searchQuery = val),
+                    onStatusChanged: (status) =>
+                        setState(() => _filterStatus = status),
+                  ),
                   Expanded(
-                    child: _filteredOrders.isEmpty
+                    child: filteredList.isEmpty
                         ? const Center(child: Text('لا توجد شحنات مطابقة'))
                         : ListView.builder(
                             padding: const EdgeInsets.all(8.0),
-                            itemCount: _filteredOrders.length,
+                            itemCount: filteredList.length,
                             itemBuilder: (context, index) {
-                              final order = _filteredOrders[index];
+                              final order = filteredList[index];
                               final isSelected = order.id != null &&
                                   _selectedOrderDbIds.contains(order.id);
 
@@ -224,22 +225,37 @@ class _DriverOrdersScreenState extends State<DriverOrdersScreen> {
       ),
     );
   }
+}
 
-  Widget _buildSummaryHeader() {
+// =================== قسم الملخص المالي ===================
+
+class _SummarySection extends StatelessWidget {
+  final double totalCollected;
+  final double totalDriverFees;
+  final double totalShopPayable;
+
+  const _SummarySection({
+    required this.totalCollected,
+    required this.totalDriverFees,
+    required this.totalShopPayable,
+  });
+
+  @override
+  Widget build(BuildContext context) {
     return Container(
       color: Colors.teal.shade50,
       padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
       child: Row(
         children: [
-          _summaryCard('المحصل الكلي', '$_totalCollected د.أ', Colors.blue),
-          _summaryCard('مستحق السائق', '$_totalDriverFees د.أ', Colors.green),
-          _summaryCard('مستحق المتاجر', '$_totalShopPayable د.أ', Colors.orange),
+          _buildCard('المحصل الكلي', '$totalCollected د.أ', Colors.blue),
+          _buildCard('مستحق السائق', '$totalDriverFees د.أ', Colors.green),
+          _buildCard('مستحق المتاجر', '$totalShopPayable د.أ', Colors.orange),
         ],
       ),
     );
   }
 
-  Widget _summaryCard(String title, String value, Color color) {
+  Widget _buildCard(String title, String value, Color color) {
     return Expanded(
       child: Card(
         elevation: 2,
@@ -247,24 +263,45 @@ class _DriverOrdersScreenState extends State<DriverOrdersScreen> {
           padding: const EdgeInsets.all(8.0),
           child: Column(
             children: [
-              Text(
-                title,
-                style: const TextStyle(fontSize: 12, color: Colors.grey),
-              ),
+              Text(title,
+                  style: const TextStyle(fontSize: 12, color: Colors.grey)),
               const SizedBox(height: 4),
-              Text(
-                value,
-                style: TextStyle(
-                    fontSize: 14, fontWeight: FontWeight.bold, color: color),
-              ),
+              Text(value,
+                  style: TextStyle(
+                      fontSize: 14, fontWeight: FontWeight.bold, color: color)),
             ],
           ),
         ),
       ),
     );
   }
+}
 
-  Widget _buildFilterBar() {
+// =================== قسم البحث والتصفية ===================
+
+class _FilterBarSection extends StatelessWidget {
+  final String searchQuery;
+  final String filterStatus;
+  final ValueChanged<String> onSearchChanged;
+  final ValueChanged<String> onStatusChanged;
+
+  const _FilterBarSection({
+    required this.searchQuery,
+    required this.filterStatus,
+    required this.onSearchChanged,
+    required this.onStatusChanged,
+  });
+
+  static const List<String> statuses = [
+    'الكل',
+    'قيد التوصيل',
+    'تم التوصيل',
+    'مؤجلة',
+    'ملغاة'
+  ];
+
+  @override
+  Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.all(8.0),
       child: Column(
@@ -274,21 +311,17 @@ class _DriverOrdersScreenState extends State<DriverOrdersScreen> {
               hintText: 'بحث باسم العميل، الهاتف، المنطقة أو الرقم...',
               prefixIcon: Icon(Icons.search),
               border: OutlineInputBorder(),
-              contentPadding: EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+              contentPadding:
+                  EdgeInsets.symmetric(vertical: 8, horizontal: 12),
             ),
-            onChanged: (val) {
-              setState(() {
-                _searchQuery = val;
-              });
-            },
+            onChanged: onSearchChanged,
           ),
           const SizedBox(height: 8),
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: Row(
-              children: ['الكل', 'قيد التوصيل', 'تم التوصيل', 'مؤجلة', 'ملغاة']
-                  .map((status) {
-                final isSelected = _filterStatus == status;
+              children: statuses.map((status) {
+                final isSelected = filterStatus == status;
                 return Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 4.0),
                   child: ChoiceChip(
@@ -299,11 +332,7 @@ class _DriverOrdersScreenState extends State<DriverOrdersScreen> {
                       color: isSelected ? Colors.white : Colors.black,
                     ),
                     onSelected: (selected) {
-                      if (selected) {
-                        setState(() {
-                          _filterStatus = status;
-                        });
-                      }
+                      if (selected) onStatusChanged(status);
                     },
                   ),
                 );
@@ -350,6 +379,8 @@ class _OrderCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final statusColor = _getStatusColor(order.status);
+
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 4),
       child: Padding(
@@ -359,10 +390,7 @@ class _OrderCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                Checkbox(
-                  value: isSelected,
-                  onChanged: onSelectChanged,
-                ),
+                Checkbox(value: isSelected, onChanged: onSelectChanged),
                 Text(
                   order.orderId.isNotEmpty ? order.orderId : 'بدون رقم',
                   style: const TextStyle(fontWeight: FontWeight.bold),
@@ -372,13 +400,13 @@ class _OrderCard extends StatelessWidget {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
-                    color: _getStatusColor(order.status).withValues(alpha: 0.15),
+                    color: statusColor.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(4),
                   ),
                   child: Text(
                     order.status,
                     style: TextStyle(
-                      color: _getStatusColor(order.status),
+                      color: statusColor,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
@@ -448,7 +476,7 @@ class _OrderCard extends StatelessWidget {
 
 class _StatusEditDialog extends StatefulWidget {
   final DeliveryOrder order;
-  final Function(DeliveryOrder) onSave;
+  final ValueChanged<DeliveryOrder> onSave;
 
   const _StatusEditDialog({
     required this.order,
@@ -463,17 +491,17 @@ class _StatusEditDialogState extends State<_StatusEditDialog> {
   late String _selectedStatus;
   late String _selectedPaymentMethod;
   late bool _isFeeCollectedOnCancel;
-  late TextEditingController _actualAmountController;
-  late TextEditingController _notesController;
+  late final TextEditingController _actualAmountController;
+  late final TextEditingController _notesController;
 
-  final List<String> _statusOptions = [
+  static const List<String> _statusOptions = [
     'قيد التوصيل',
     'تم التوصيل',
     'مؤجلة',
     'ملغاة',
   ];
 
-  final List<String> _paymentOptions = [
+  static const List<String> _paymentOptions = [
     'نقداً',
     'كليك CliQ',
   ];
@@ -501,12 +529,10 @@ class _StatusEditDialogState extends State<_StatusEditDialog> {
     if (_selectedStatus == 'تم التوصيل') {
       _actualAmountController.text = widget.order.totalAmount.toString();
     } else if (_selectedStatus == 'ملغاة') {
-      if (_isFeeCollectedOnCancel) {
-        _actualAmountController.text = widget.order.deliveryFee.toString();
-      } else {
-        _actualAmountController.text = '0.0';
-      }
-    } else if (_selectedStatus == 'مؤجلة' || _selectedStatus == 'قيد التوصيل') {
+      _actualAmountController.text = _isFeeCollectedOnCancel
+          ? widget.order.deliveryFee.toString()
+          : '0.0';
+    } else {
       _actualAmountController.text = '0.0';
     }
   }
@@ -516,13 +542,16 @@ class _StatusEditDialogState extends State<_StatusEditDialog> {
     return Directionality(
       textDirection: TextDirection.rtl,
       child: AlertDialog(
-        title: Text('تعديل حالة الشحنة (${widget.order.orderId.isNotEmpty ? widget.order.orderId : widget.order.customerName})'),
+        title: Text(
+            'تعديل حالة الشحنة (${widget.order.orderId.isNotEmpty ? widget.order.orderId : widget.order.customerName})'),
         content: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               DropdownButtonFormField<String>(
-                initialValue: _statusOptions.contains(_selectedStatus) ? _selectedStatus : _statusOptions.first,
+                initialValue: _statusOptions.contains(_selectedStatus)
+                    ? _selectedStatus
+                    : _statusOptions.first,
                 decoration: const InputDecoration(
                   labelText: 'حالة التوصيل',
                   border: OutlineInputBorder(),
@@ -544,7 +573,9 @@ class _StatusEditDialogState extends State<_StatusEditDialog> {
               ),
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
-                initialValue: _paymentOptions.contains(_selectedPaymentMethod) ? _selectedPaymentMethod : _paymentOptions.first,
+                initialValue: _paymentOptions.contains(_selectedPaymentMethod)
+                    ? _selectedPaymentMethod
+                    : _paymentOptions.first,
                 decoration: const InputDecoration(
                   labelText: 'طريقة الدفع',
                   border: OutlineInputBorder(),
@@ -557,9 +588,7 @@ class _StatusEditDialogState extends State<_StatusEditDialog> {
                     .toList(),
                 onChanged: (val) {
                   if (val != null) {
-                    setState(() {
-                      _selectedPaymentMethod = val;
-                    });
+                    setState(() => _selectedPaymentMethod = val);
                   }
                 },
               ),
@@ -567,8 +596,8 @@ class _StatusEditDialogState extends State<_StatusEditDialog> {
                 const SizedBox(height: 12),
                 SwitchListTile(
                   title: const Text('تحصيل قيمة التوصيل فقط؟'),
-                  subtitle: Text(
-                      'أجرة التوصيل: ${widget.order.deliveryFee} د.أ'),
+                  subtitle:
+                      Text('أجرة التوصيل: ${widget.order.deliveryFee} د.أ'),
                   value: _isFeeCollectedOnCancel,
                   onChanged: (bool value) {
                     setState(() {
@@ -611,16 +640,17 @@ class _StatusEditDialogState extends State<_StatusEditDialog> {
               foregroundColor: Colors.white,
             ),
             onPressed: () {
-              final double actualAmount =
-                  double.tryParse(_actualAmountController.text) ?? 0.0;
+              // الاستخدام النظيف والمختصر لـ copyWith بدلاً من التمرير اليدوي الخاطئ
+              final updatedOrder = widget.order.copyWith(
+                status: _selectedStatus,
+                paymentMethod: _selectedPaymentMethod,
+                isFeeCollectedOnCancel: _isFeeCollectedOnCancel,
+                actualCollectedAmount:
+                    double.tryParse(_actualAmountController.text) ?? 0.0,
+                notes: _notesController.text.trim(),
+              );
 
-              widget.order.status = _selectedStatus;
-              widget.order.paymentMethod = _selectedPaymentMethod;
-              widget.order.isFeeCollectedOnCancel = _isFeeCollectedOnCancel;
-              widget.order.actualCollectedAmount = actualAmount;
-              widget.order.notes = _notesController.text.trim();
-
-              widget.onSave(widget.order);
+              widget.onSave(updatedOrder);
               Navigator.pop(context);
             },
             child: const Text('حفظ التعديلات'),

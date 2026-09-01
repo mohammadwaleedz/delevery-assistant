@@ -28,15 +28,7 @@ class MyApp extends StatelessWidget {
 }
 
 class AppTheme {
-  static ThemeData get lightTheme => ThemeData(
-        primarySwatch: Colors.green,
-        scaffoldBackgroundColor: const Color(0xFFF5F5F5),
-        appBarTheme: const AppBarTheme(
-          backgroundColor: Colors.green,
-          foregroundColor: Colors.white,
-          elevation: 0,
-        ),
-      );
+  static ThemeData? get lightTheme => null;
 }
 
 class HomeScreen extends StatefulWidget {
@@ -50,10 +42,9 @@ class _HomeScreenState extends State<HomeScreen> {
   List<Map<String, dynamic>> _extractedOrders = [];
   final Set<String> _sentPhones = {};
   bool _isLoading = false;
-
   bool _isAuthenticated = false;
   bool _hasPinSet = false;
-  final TextEditingController _pinInputController = TextEditingController();
+  final _pinInputController = TextEditingController();
 
   @override
   void initState() {
@@ -68,7 +59,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _checkSecurity() async {
-    bool hasPin = await SecurityService.isPinSet();
+    final hasPin = await SecurityService.isPinSet();
     if (!mounted) return;
     setState(() {
       _hasPinSet = hasPin;
@@ -77,33 +68,33 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _verifyEnteredPin() async {
-    String input = _pinInputController.text.trim();
-    bool isValid = await SecurityService.verifyPin(input);
-
+    final isValid = await SecurityService.verifyPin(_pinInputController.text.trim());
     if (isValid) {
       setState(() {
         _isAuthenticated = true;
+        _pinInputController.clear();
       });
-      _pinInputController.clear();
     } else {
       _showMessage('كلمة المرور غير صحيحة!');
     }
   }
 
   void _navigateToScreen(Widget screen) async {
-    await Navigator.push(
-      context,
-      MaterialPageRoute(builder: (context) => screen),
-    );
+    await Navigator.push(context, MaterialPageRoute(builder: (_) => screen));
     _checkSecurity();
+  }
+
+  void _showMessage(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
+    );
   }
 
   void _showImageSourceDialog() {
     showModalBottomSheet(
       context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (ctx) => SafeArea(
         child: Wrap(
           children: [
@@ -130,9 +121,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _pickAndRecognizeText(ImageSource source) async {
-    final ImagePicker picker = ImagePicker();
-    final XFile? image = await picker.pickImage(source: source);
-
+    final image = await ImagePicker().pickImage(source: source);
     if (image == null) return;
 
     setState(() {
@@ -141,14 +130,10 @@ class _HomeScreenState extends State<HomeScreen> {
       _sentPhones.clear();
     });
 
-    final inputImage = InputImage.fromFilePath(image.path);
     final textRecognizer = TextRecognizer(script: TextRecognitionScript.latin);
-
     try {
-      final RecognizedText recognizedText = await textRecognizer.processImage(inputImage);
-
-      final RegExp phoneRegex = RegExp(r'\+?[0-9]{8,15}');
-      final matches = phoneRegex.allMatches(recognizedText.text).map((m) => m.group(0)!).toSet().toList();
+      final recognizedText = await textRecognizer.processImage(InputImage.fromFilePath(image.path));
+      final matches = RegExp(r'\+?[0-9]{8,15}').allMatches(recognizedText.text).map((m) => m.group(0)!).toSet().toList();
 
       List<Map<String, dynamic>> tempOrders = [];
       final nowIso = DateTime.now().toIso8601String();
@@ -164,29 +149,18 @@ class _HomeScreenState extends State<HomeScreen> {
           'status': 'قيد التوصيل',
           'updatedAt': nowIso,
         };
-
         await DatabaseHelper.instance.insertManifestItem(orderData);
         tempOrders.add(orderData);
       }
 
       if (!mounted) return;
-
-      setState(() {
-        _extractedOrders = tempOrders;
-      });
-
-      _showMessage(
-        matches.isEmpty
-            ? 'لم يتم العثور على أرقام هواتف في الصورة'
-            : 'تم استخراج وحفظ ${matches.length} رقم بنجاح في كشف التوصيل',
-      );
+      setState(() => _extractedOrders = tempOrders);
+      _showMessage(matches.isEmpty ? 'لم يتم العثور على أرقام هواتف في الصورة' : 'تم استخراج وحفظ ${matches.length} رقم بنجاح');
     } catch (e) {
       _showMessage('حدث خطأ أثناء قراءة الصورة: $e');
     } finally {
       await textRecognizer.close();
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -194,7 +168,7 @@ class _HomeScreenState extends State<HomeScreen> {
     String cleanPhone = phone.replaceAll(RegExp(r'[^\d]'), '');
     if (!cleanPhone.startsWith('0') && cleanPhone.length == 9) cleanPhone = '0$cleanPhone';
 
-    final Uri uri = Uri(scheme: 'tel', path: cleanPhone);
+    final uri = Uri(scheme: 'tel', path: cleanPhone);
     try {
       if (await canLaunchUrl(uri)) {
         await launchUrl(uri, mode: LaunchMode.platformDefault);
@@ -214,18 +188,14 @@ class _HomeScreenState extends State<HomeScreen> {
       cleanPhone = '962$cleanPhone';
     }
 
-    const defaultMessage = "الله يعطيك العافية\nمعك مندوب شركة التوصيل\nإذا سمحت أرسل موقعك";
-    final Uri uri = Uri.parse("https://wa.me/$cleanPhone?text=${Uri.encodeComponent(defaultMessage)}");
+    const msg = "الله يعطيك العافية\nمعك مندوب شركة التوصيل\nإذا سمحت أرسل موقعك";
+    final uri = Uri.parse("https://wa.me/$cleanPhone?text=${Uri.encodeComponent(msg)}");
 
     try {
       if (await canLaunchUrl(uri)) {
         if (mounted) {
-          setState(() {
-            _sentPhones.add(phone);
-          });
-          if (setSheetState != null) {
-            setSheetState(() {});
-          }
+          setState(() => _sentPhones.add(phone));
+          setSheetState?.call(() {});
         }
         await launchUrl(uri, mode: LaunchMode.externalApplication);
       } else {
@@ -236,22 +206,13 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  void _showMessage(String message) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
-    );
-  }
-
   void _showContactOptions(String phone) {
     showModalBottomSheet(
       context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (ctx) => SafeArea(
         child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 16.0, horizontal: 8.0),
+          padding: const EdgeInsets.all(16.0),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -260,18 +221,12 @@ class _HomeScreenState extends State<HomeScreen> {
               ListTile(
                 leading: const CircleAvatar(backgroundColor: Colors.blue, child: Icon(Icons.phone, color: Colors.white)),
                 title: const Text('اتصال هاتفي بشكل مباشر'),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _makePhoneCall(phone);
-                },
+                onTap: () { Navigator.pop(ctx); _makePhoneCall(phone); },
               ),
               ListTile(
                 leading: const CircleAvatar(backgroundColor: Colors.green, child: Icon(Icons.chat, color: Colors.white)),
-                title: const Text('التواصل عبر واتساب (مع رسالة جاهزة)'),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _openWhatsApp(phone);
-                },
+                title: const Text('التواصل عبر واتساب'),
+                onTap: () { Navigator.pop(ctx); _openWhatsApp(phone); },
               ),
             ],
           ),
@@ -284,64 +239,57 @@ class _HomeScreenState extends State<HomeScreen> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (ctx) => StatefulBuilder(
-        builder: (context, setSheetState) {
-          return SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text('الأرقام المكتشفة (${_extractedOrders.length})', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-                      Text('تم مراسلة ${_sentPhones.length} من ${_extractedOrders.length}', style: TextStyle(color: Colors.grey.shade600, fontSize: 13)),
-                    ],
-                  ),
-                  const Divider(height: 20),
-                  Flexible(
-                    child: ListView.builder(
-                      shrinkWrap: true,
-                      itemCount: _extractedOrders.length,
-                      itemBuilder: (ctx, index) {
-                        final order = _extractedOrders[index];
-                        final phone = order['mobile'].toString();
-                        final isSent = _sentPhones.contains(phone);
+        builder: (context, setSheetState) => SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('الأرقام المكتشفة (${_extractedOrders.length})', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+                    Text('تم مراسلة ${_sentPhones.length} من ${_extractedOrders.length}', style: TextStyle(color: Colors.grey.shade600, fontSize: 13)),
+                  ],
+                ),
+                const Divider(height: 20),
+                Flexible(
+                  child: ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: _extractedOrders.length,
+                    itemBuilder: (ctx, index) {
+                      final order = _extractedOrders[index];
+                      final phone = order['mobile'].toString();
+                      final isSent = _sentPhones.contains(phone);
 
-                        return Card(
-                          margin: const EdgeInsets.only(bottom: 8),
-                          child: ListTile(
-                            leading: Icon(isSent ? Icons.check_circle : Icons.phone_android, color: isSent ? Colors.green : Colors.blueGrey),
-                            title: Text(phone, style: TextStyle(fontWeight: FontWeight.bold, decoration: isSent ? TextDecoration.lineThrough : null)),
-                            subtitle: Text('رقم الشحنة: ${order['orderId']}'),
-                            trailing: ElevatedButton.icon(
-                              onPressed: () => _openWhatsApp(phone, setSheetState),
-                              icon: Icon(isSent ? Icons.done : Icons.send, size: 16),
-                              label: Text(isSent ? 'تم' : 'إرسال'),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: isSent ? Colors.grey.shade300 : Colors.green,
-                                foregroundColor: isSent ? Colors.black54 : Colors.white,
-                                elevation: isSent ? 0 : 2,
-                              ),
+                      return Card(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        child: ListTile(
+                          leading: Icon(isSent ? Icons.check_circle : Icons.phone_android, color: isSent ? Colors.green : Colors.blueGrey),
+                          title: Text(phone, style: TextStyle(fontWeight: FontWeight.bold, decoration: isSent ? TextDecoration.lineThrough : null)),
+                          subtitle: Text('رقم الشحنة: ${order['orderId']}'),
+                          trailing: ElevatedButton.icon(
+                            onPressed: () => _openWhatsApp(phone, setSheetState),
+                            icon: Icon(isSent ? Icons.done : Icons.send, size: 16),
+                            label: Text(isSent ? 'تم' : 'إرسال'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: isSent ? Colors.grey.shade300 : Colors.green,
+                              foregroundColor: isSent ? Colors.black54 : Colors.white,
+                              elevation: isSent ? 0 : 2,
                             ),
-                            onTap: () {
-                              Navigator.pop(ctx);
-                              _showContactOptions(phone);
-                            },
                           ),
-                        );
-                      },
-                    ),
+                          onTap: () { Navigator.pop(ctx); _showContactOptions(phone); },
+                        ),
+                      );
+                    },
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
-          );
-        },
+          ),
+        ),
       ),
     );
   }
@@ -358,10 +306,7 @@ class _HomeScreenState extends State<HomeScreen> {
               children: [
                 const Icon(Icons.lock_person, size: 80, color: Colors.green),
                 const SizedBox(height: 16),
-                const Text(
-                  'ادخل كلمة المرور لدخول التطبيق',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                ),
+                const Text('ادخل كلمة المرور لدخول التطبيق', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 20),
                 TextField(
                   controller: _pinInputController,
@@ -369,10 +314,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   keyboardType: TextInputType.number,
                   textAlign: TextAlign.center,
                   style: const TextStyle(fontSize: 22, letterSpacing: 8),
-                  decoration: const InputDecoration(
-                    border: OutlineInputBorder(),
-                    hintText: '****',
-                  ),
+                  decoration: const InputDecoration(border: OutlineInputBorder(), hintText: '****'),
                 ),
                 const SizedBox(height: 20),
                 ElevatedButton.icon(
@@ -451,167 +393,126 @@ class _HomeScreenState extends State<HomeScreen> {
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Material(
+            _buildActionCard(
+              onTap: _isLoading ? null : _showImageSourceDialog,
               color: Colors.green,
-              borderRadius: BorderRadius.circular(16),
-              elevation: 4,
-              child: InkWell(
-                onTap: _isLoading ? null : _showImageSourceDialog,
-                borderRadius: BorderRadius.circular(16),
-                child: Padding(
-                  padding: const EdgeInsets.all(20.0),
-                  child: Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.2),
-                          shape: BoxShape.circle,
-                        ),
-                        child: _isLoading
-                            ? const SizedBox(width: 30, height: 30, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                            : const Icon(Icons.camera_alt_rounded, color: Colors.white, size: 30),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              _isLoading ? 'جاري قراءة الصورة...' : 'إضافة صورة جديدة (كاميرا / معرض)',
-                              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              'التقاط بوليصة الشحن أو الفاتورة واستخراج الأرقام',
-                              style: TextStyle(fontSize: 12, color: Colors.white.withValues(alpha: 0.8)),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const Icon(Icons.arrow_forward_ios_rounded, color: Colors.white, size: 18),
-                    ],
-                  ),
-                ),
-              ),
+              icon: _isLoading ? null : Icons.camera_alt_rounded,
+              isLoading: _isLoading,
+              title: _isLoading ? 'جاري قراءة الصورة...' : 'إضافة صورة جديدة (كاميرا / معرض)',
+              subtitle: 'التقاط بوليصة الشحن أو الفاتورة واستخراج الأرقام',
+              isPrimary: true,
             ),
             const SizedBox(height: 16),
-            Card(
-              elevation: 1,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-                side: BorderSide(color: Colors.grey.shade200),
-              ),
-              child: InkWell(
-                onTap: () => _navigateToScreen(const manifest_file.ManifestSheetScreen()),
-                borderRadius: BorderRadius.circular(16),
-                child: Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          color: Colors.blueGrey.shade50,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: const Icon(Icons.assignment_turned_in_rounded, color: Colors.blueGrey, size: 24),
-                      ),
-                      const SizedBox(width: 16),
-                      const Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'عرض كشف التوصيل المالي (Manifest)',
-                              style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.black87),
-                            ),
-                            SizedBox(height: 2),
-                            Text(
-                              'مراجعة وتعديل بيانات الشحنات المسجلة',
-                              style: TextStyle(fontSize: 12, color: Colors.grey),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const Icon(Icons.arrow_forward_ios_rounded, color: Colors.grey, size: 16),
-                    ],
-                  ),
-                ),
-              ),
+            _buildActionCard(
+              onTap: () => _navigateToScreen(const manifest_file.ManifestSheetScreen()),
+              color: Colors.blueGrey.shade50,
+              iconColor: Colors.blueGrey,
+              icon: Icons.assignment_turned_in_rounded,
+              title: 'عرض كشف التوصيل المالي (Manifest)',
+              subtitle: 'مراجعة وتعديل بيانات الشحنات المسجلة',
+              isLoading: false,
             ),
             const SizedBox(height: 16),
-            Card(
-              elevation: 1,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-                side: BorderSide(color: Colors.grey.shade200),
-              ),
-              child: InkWell(
-                onTap: _extractedOrders.isEmpty || _isLoading
-                    ? null
-                    : () {
-                        if (_extractedOrders.length == 1) {
-                          _showContactOptions(_extractedOrders.first['mobile'].toString());
-                        } else {
-                          _showPhonesDialog();
-                        }
-                      },
-                borderRadius: BorderRadius.circular(16),
-                child: Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          color: _extractedOrders.isEmpty ? Colors.grey.shade100 : Colors.green.shade50,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Icon(
-                          _extractedOrders.isEmpty ? Icons.person_off : Icons.contact_phone,
-                          color: _extractedOrders.isEmpty ? Colors.grey : Colors.green,
-                          size: 24,
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              _extractedOrders.isEmpty
-                                  ? 'لم يتم العثور على رقم هاتف'
-                                  : _extractedOrders.length == 1
-                                      ? 'التواصل مع العميل'
-                                      : 'مراسلة الأرقام المكتشفة',
-                              style: TextStyle(
-                                fontSize: 15,
-                                fontWeight: FontWeight.bold,
-                                color: _extractedOrders.isEmpty ? Colors.grey : Colors.black87,
-                              ),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              _extractedOrders.isEmpty
-                                  ? 'قم بالتقاط صورة أولاً لاستخراج الأرقام'
-                                  : 'عدد الأرقام المتاحة: ${_extractedOrders.length}',
-                              style: const TextStyle(fontSize: 12, color: Colors.grey),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const Icon(Icons.arrow_forward_ios_rounded, color: Colors.grey, size: 16),
-                    ],
-                  ),
-                ),
-              ),
+            _buildActionCard(
+              onTap: _extractedOrders.isEmpty || _isLoading
+                  ? null
+                  : () => _extractedOrders.length == 1
+                      ? _showContactOptions(_extractedOrders.first['mobile'].toString())
+                      : _showPhonesDialog(),
+              color: _extractedOrders.isEmpty ? Colors.grey.shade100 : Colors.green.shade50,
+              iconColor: _extractedOrders.isEmpty ? Colors.grey : Colors.green,
+              icon: _extractedOrders.isEmpty ? Icons.person_off : Icons.contact_phone,
+              title: _extractedOrders.isEmpty
+                  ? 'لم يتم العثور على رقم هاتف'
+                  : _extractedOrders.length == 1
+                      ? 'التواصل مع العميل'
+                      : 'مراسلة الأرقام المكتشفة',
+              subtitle: _extractedOrders.isEmpty ? 'قم بالتقاط صورة أولاً لاستخراج الأرقام' : 'عدد الأرقام المتاحة: ${_extractedOrders.length}',
+              isLoading: _isLoading,
             ),
           ],
         ),
       ),
     );
+  }
+
+  // دالة مساعدة لتقليل تكرار تصميم البطاقات (Cards)
+  Widget _buildActionCard({
+    required VoidCallback? onTap,
+    required Color color,
+    required IconData? icon,
+    required String title,
+    required String subtitle,
+    bool isPrimary = false,
+    Color iconColor = Colors.white, required bool isLoading,
+  }) {
+    return Material(
+      color: isPrimary ? color : Colors.white,
+      borderRadius: BorderRadius.circular(16),
+      elevation: isPrimary ? 4 : 1,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          padding: const EdgeInsets.all(16.0),
+          decoration: isPrimary
+              ? null
+              : BoxDecoration(
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: Colors.grey.shade200),
+                ),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: isPrimary ? Colors.white.withValues(alpha: 0.2) : color,
+                  shape: isPrimary ? BoxShape.circle : BoxShape.rectangle,
+                  borderRadius: isPrimary ? null : BorderRadius.circular(12),
+                ),
+                child: isLoadingWidget(isPrimary, icon, iconColor),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: TextStyle(
+                        fontSize: isPrimary ? 16 : 15,
+                        fontWeight: FontWeight.bold,
+                        color: isPrimary ? Colors.white : (onTap == null ? Colors.grey : Colors.black87),
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: isPrimary ? Colors.white.withValues(alpha: 0.8) : Colors.grey,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                Icons.arrow_forward_ios_rounded,
+                color: isPrimary ? Colors.white : Colors.grey,
+                size: 18,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget isLoadingWidget(bool isPrimary, IconData? icon, Color iconColor) {
+    if (_isLoading && isPrimary) {
+      return const SizedBox(width: 30, height: 30, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white));
+    }
+    return Icon(icon, color: isPrimary ? Colors.white : iconColor, size: 24);
   }
 }

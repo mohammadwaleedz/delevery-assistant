@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 
-class AppTheme {
+@immutable
+abstract class AppTheme {
+  const AppTheme._(); // منع إنشاء كائن من الكلاس
+
   // الألوان الأساسية للتطبيق
-  static const Color primaryColor = Color(0xFF2E7D32); // اللون الأخضر الأساسي
-  static const Color primaryLight = Color(0xFFE8F5E9); // لون خلفية فاتح متوافق مع الأساسي
+  static const Color primaryColor = Color(0xFF2E7D32); // الأخضر الأساسي
+  static const Color primaryLight = Color(0xFFE8F5E9); // خلفية فاتحة متوافقة
   
   // ألوان النصوص
   static const Color textPrimary = Color(0xFF212121);   // النص الرئيسي الداكن
@@ -32,7 +35,7 @@ class AppTheme {
         titleTextStyle: TextStyle(
           fontSize: 18,
           fontWeight: FontWeight.bold,
-          fontFamily: 'Cairo', // أو أي خط تستخدمه
+          fontFamily: 'Cairo',
         ),
       ),
     );
