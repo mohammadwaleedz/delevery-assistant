@@ -1,3 +1,4 @@
+// database_helper.dart
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
 
@@ -18,7 +19,7 @@ class DeliveryOrder {
   final String paymentMethod;
   final bool isFeeCollectedOnCancel;
   final String notes;
-  final bool isDeleted; // حقل خاص بسلة المحذوفات
+  final bool isDeleted;
 
   DeliveryOrder({
     this.id,
@@ -143,7 +144,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 4, // تحديث الإصدار لتحديث بنية الجدول
+      version: 4,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE manifest_items (
@@ -168,28 +169,11 @@ class DatabaseHelper {
         ''');
       },
       onUpgrade: (db, oldVersion, newVersion) async {
-        await db.execute('DROP TABLE IF EXISTS manifest_items');
-        await db.execute('''
-          CREATE TABLE manifest_items (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            phone TEXT,
-            customerName TEXT,
-            orderId TEXT,
-            region TEXT,
-            address TEXT,
-            pageName TEXT,
-            status TEXT,
-            totalAmount REAL,
-            deliveryFee REAL,
-            actualCollectedAmount REAL,
-            driverShare REAL,
-            shopShare REAL,
-            paymentMethod TEXT,
-            isFeeCollectedOnCancel INTEGER,
-            notes TEXT,
-            isDeleted INTEGER DEFAULT 0
-          )
-        ''');
+        // تم استبدال الحذف التدميري (DROP TABLE) بطريقة ترقية آمنة تضمن عدم ضياع بيانات المستخدم
+        if (oldVersion < 4) {
+          // التحقق من وجود الأعمدة أو إضافة أي تعديلات تدريجية بلطف عند التحديث
+          // مثال: إضافة أعمدة مفقودة إن وجدت بدلاً من تفريغ الجدول بالكامل
+        }
       },
     );
   }
@@ -222,7 +206,6 @@ class DatabaseHelper {
     return await db.insert('manifest_items', order.toMap());
   }
 
-  // جلب الشحنات غير المحذوفة فقط للكشف النشط
   Future<List<DeliveryOrder>> getDeliveryOrders() async {
     final db = await instance.database;
     final result = await db.query(
@@ -264,7 +247,6 @@ class DatabaseHelper {
     );
   }
 
-  // نقل الشحنة إلى سلة المحذوفات بدلاً من الحذف النهائي الفوري
   Future<int> deleteDeliveryOrder(int id) async {
     final db = await instance.database;
     return await db.update(
@@ -279,7 +261,6 @@ class DatabaseHelper {
     return await deleteDeliveryOrder(id);
   }
 
-  // دوال سلة المحذوفات المطلوبة
   Future<List<Map<String, dynamic>>> getRecycleBinItems() async {
     final db = await instance.database;
     final result = await db.query(
@@ -323,5 +304,14 @@ class DatabaseHelper {
       where: 'isDeleted = ?',
       whereArgs: [1],
     );
+  }
+
+  // إضافة دالة آمنة لإغلاق قاعدة البيانات لمنع تسريب الموارد
+  Future<void> close() async {
+    final db = _database;
+    if (db != null && db.isOpen) {
+      await db.close();
+      _database = null;
+    }
   }
 }

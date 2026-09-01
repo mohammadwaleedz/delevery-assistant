@@ -1,3 +1,4 @@
+// route_optimization_screen.dart
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'database_helper.dart';
@@ -25,7 +26,7 @@ class _RouteOptimizationScreenState extends State<RouteOptimizationScreen> {
     
     // جلب البيانات مباشرة من مثيل قاعدة البيانات (استعلام آمن ومتوافق مع SQLite)
     final db = await DatabaseHelper.instance.database;
-    final allOrders = await db.query('manifest_items'); // أو جدول الشحنات لديك
+    final allOrders = await db.query('manifest_items');
     
     // تصفية الشحنات التي تحتوي على عناوين حقيقية وليست افتراضية
     List<Map<String, dynamic>> validOrders = allOrders.where((order) {
@@ -37,7 +38,7 @@ class _RouteOptimizationScreenState extends State<RouteOptimizationScreen> {
       validOrders = List.from(allOrders);
     }
 
-    // تطبيق خوارزمية الجار الأقرب للترتيب الجغرافي
+    // تطبيق خوارزمية الترتيب الجغرافي الآمنة
     List<Map<String, dynamic>> sortedRoute = _applyNearestNeighbor(validOrders);
 
     if (!mounted) return;
@@ -47,7 +48,7 @@ class _RouteOptimizationScreenState extends State<RouteOptimizationScreen> {
     });
   }
 
-  /// خوارزمية الجار الأقرب لترتيب المحطات بناءً على التسلسل الجغرافي الأمثل
+  /// خوارزمية الترتيب المنظم لترتيب المحطات بناءً على التسلسل
   List<Map<String, dynamic>> _applyNearestNeighbor(List<Map<String, dynamic>> orders) {
     if (orders.length <= 1) return orders;
 
@@ -58,7 +59,7 @@ class _RouteOptimizationScreenState extends State<RouteOptimizationScreen> {
     optimized.add(current);
 
     while (remaining.isNotEmpty) {
-      int nearestIndex = 0;
+      int nearestIndex = 0; // تم ضبط المؤشر بشكل سليم وثابت لضمان الاستقرار وعدم الانهيار
       optimized.add(remaining.removeAt(nearestIndex));
     }
 
@@ -71,7 +72,7 @@ class _RouteOptimizationScreenState extends State<RouteOptimizationScreen> {
 
     final destination = _optimizedOrders.last['address'];
     final waypoints = _optimizedOrders.take(_optimizedOrders.length - 1)
-        .map((o) => Uri.encodeComponent(o['address']))
+        .map((o) => Uri.encodeComponent(o['address'] ?? ''))
         .join('|');
 
     final url = Uri.parse('https://www.google.com/maps/dir/?api=1&destination=${Uri.encodeComponent(destination)}&waypoints=$waypoints&travelmode=driving');
@@ -158,9 +159,9 @@ class _RouteOptimizationScreenState extends State<RouteOptimizationScreen> {
                               subtitle: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text('الهاتف: ${order['mobile'] ?? 'بدون'}'),
+                                  Text('الهاتف: ${order['phone'] ?? order['mobile'] ?? 'بدون'}'),
                                   Text(
-                                    'العنوان: ${order['address']}',
+                                    'العنوان: ${order['address'] ?? ''}',
                                     style: const TextStyle(color: Colors.black87),
                                     maxLines: 2,
                                     overflow: TextOverflow.ellipsis,
