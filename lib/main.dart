@@ -21,13 +21,22 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'مساعد التوصيل',
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.green),
-        useMaterial3: true,
-      ),
+      theme: AppTheme.lightTheme,
       home: const HomeScreen(),
     );
   }
+}
+
+class AppTheme {
+  static ThemeData get lightTheme => ThemeData(
+        primarySwatch: Colors.green,
+        scaffoldBackgroundColor: const Color(0xFFF5F5F5),
+        appBarTheme: const AppBarTheme(
+          backgroundColor: Colors.green,
+          foregroundColor: Colors.white,
+          elevation: 0,
+        ),
+      );
 }
 
 class HomeScreen extends StatefulWidget {
@@ -44,7 +53,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   bool _isAuthenticated = false;
   bool _hasPinSet = false;
-  final _pinInputController = TextEditingController();
+  final TextEditingController _pinInputController = TextEditingController();
 
   @override
   void initState() {
@@ -63,7 +72,7 @@ class _HomeScreenState extends State<HomeScreen> {
     if (!mounted) return;
     setState(() {
       _hasPinSet = hasPin;
-      _isAuthenticated = !hasPin; 
+      _isAuthenticated = !hasPin;
     });
   }
 
@@ -167,9 +176,9 @@ class _HomeScreenState extends State<HomeScreen> {
       });
 
       _showMessage(
-        matches.isEmpty 
-            ? 'لم يتم العثور على أرقام هواتف في الصورة' 
-            : 'تم استخراج وحفظ ${matches.length} رقم بنجاح في كشف التوصيل'
+        matches.isEmpty
+            ? 'لم يتم العثور على أرقام هواتف في الصورة'
+            : 'تم استخراج وحفظ ${matches.length} رقم بنجاح في كشف التوصيل',
       );
     } catch (e) {
       _showMessage('حدث خطأ أثناء قراءة الصورة: $e');
@@ -383,149 +392,223 @@ class _HomeScreenState extends State<HomeScreen> {
       );
     }
 
-    return DefaultTabController(
-      length: 3,
-      child: Scaffold(
-        appBar: AppBar(
-          title: const Text('مساعد التوصيل'),
-          centerTitle: true,
-          backgroundColor: Colors.green,
-          foregroundColor: Colors.white,
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.settings),
-              onPressed: () => _navigateToScreen(const SettingsScreen()),
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('مساعد التوصيل الاحترافي'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.settings_outlined),
+            onPressed: () => _navigateToScreen(const SettingsScreen()),
+          ),
+        ],
+      ),
+      drawer: Drawer(
+        child: ListView(
+          padding: EdgeInsets.zero,
+          children: [
+            const UserAccountsDrawerHeader(
+              decoration: BoxDecoration(color: Colors.green),
+              currentAccountPicture: CircleAvatar(
+                backgroundColor: Colors.white,
+                child: Text('د', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.green)),
+              ),
+              accountName: Text('مساعد التوصيل', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              accountEmail: Text('driver.account@app.com', style: TextStyle(fontSize: 12, color: Colors.white70)),
+            ),
+            ListTile(
+              leading: const Icon(Icons.home_outlined, color: Colors.green),
+              title: const Text('الرئيسية'),
+              onTap: () => Navigator.pop(context),
+            ),
+            ListTile(
+              leading: const Icon(Icons.list_alt_rounded, color: Colors.green),
+              title: const Text('كشف التوصيل المالي (Manifest)'),
+              onTap: () {
+                Navigator.pop(context);
+                _navigateToScreen(const manifest_file.ManifestSheetScreen());
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.delete_outline_rounded, color: Colors.green),
+              title: const Text('سلة المحذوفات'),
+              onTap: () {
+                Navigator.pop(context);
+                _navigateToScreen(const recycle_file.RecycleBinScreen());
+              },
+            ),
+            const Divider(),
+            ListTile(
+              leading: const Icon(Icons.settings_outlined, color: Colors.grey),
+              title: const Text('الإعدادات'),
+              onTap: () {
+                Navigator.pop(context);
+                _navigateToScreen(const SettingsScreen());
+              },
             ),
           ],
-          bottom: const TabBar(
-            indicatorColor: Colors.white,
-            labelColor: Colors.white,
-            unselectedLabelColor: Colors.white70,
-            tabs: [
-              Tab(icon: Icon(Icons.home), text: 'الرئيسية'),
-              Tab(icon: Icon(Icons.assignment), text: 'الكشف'),
-              Tab(icon: Icon(Icons.delete_outline), text: 'المحذوفات'),
-            ],
-          ),
         ),
-        drawer: Drawer(
-          child: ListView(
-            padding: EdgeInsets.zero,
-            children: [
-              const DrawerHeader(
-                decoration: BoxDecoration(color: Colors.green),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.local_shipping, size: 48, color: Colors.white),
-                    SizedBox(height: 10),
-                    Text(
-                      'مساعد التوصيل',
-                      style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
-                    ),
-                  ],
-                ),
-              ),
-              ListTile(
-                leading: const Icon(Icons.home, color: Colors.green),
-                title: const Text('الرئيسية'),
-                onTap: () => Navigator.pop(context),
-              ),
-              ListTile(
-                leading: const Icon(Icons.assignment, color: Colors.blueGrey),
-                title: const Text('كشف التوصيل (Manifest)'),
-                onTap: () {
-                  Navigator.pop(context);
-                  _navigateToScreen(const manifest_file.ManifestSheetScreen());
-                },
-              ),
-              const Divider(),
-              ListTile(
-                leading: const Icon(Icons.delete_outline, color: Colors.teal),
-                title: const Text('سلة المحذوفات'),
-                onTap: () {
-                  Navigator.pop(context);
-                  _navigateToScreen(const recycle_file.RecycleBinScreen());
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.settings, color: Colors.grey),
-                title: const Text('الإعدادات'),
-                onTap: () {
-                  Navigator.pop(context);
-                  _navigateToScreen(const SettingsScreen());
-                },
-              ),
-            ],
-          ),
-        ),
-        body: TabBarView(
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            SingleChildScrollView(
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  children: [
-                    ElevatedButton.icon(
-                      onPressed: _isLoading ? null : _showImageSourceDialog,
-                      icon: _isLoading 
-                          ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                          : const Icon(Icons.add_a_photo),
-                      label: Text(_isLoading ? 'جاري قراءة الصورة...' : 'إضافة صورة (كاميرا / معرض)'),
-                      style: ElevatedButton.styleFrom(
-                        minimumSize: const Size.fromHeight(50),
-                        backgroundColor: Colors.green,
-                        foregroundColor: Colors.white,
+            Material(
+              color: Colors.green,
+              borderRadius: BorderRadius.circular(16),
+              elevation: 4,
+              child: InkWell(
+                onTap: _isLoading ? null : _showImageSourceDialog,
+                borderRadius: BorderRadius.circular(16),
+                child: Padding(
+                  padding: const EdgeInsets.all(20.0),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.2),
+                          shape: BoxShape.circle,
+                        ),
+                        child: _isLoading
+                            ? const SizedBox(width: 30, height: 30, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                            : const Icon(Icons.camera_alt_rounded, color: Colors.white, size: 30),
                       ),
-                    ),
-                    const SizedBox(height: 12),
-                    ElevatedButton.icon(
-                      onPressed: () => _navigateToScreen(const manifest_file.ManifestSheetScreen()),
-                      icon: const Icon(Icons.assignment, color: Colors.white),
-                      label: const Text('عرض كشف التوصيل المالي (Manifest)'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.blueGrey.shade800,
-                        foregroundColor: Colors.white,
-                        minimumSize: const Size.fromHeight(50),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              _isLoading ? 'جاري قراءة الصورة...' : 'إضافة صورة جديدة (كاميرا / معرض)',
+                              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'التقاط بوليصة الشحن أو الفاتورة واستخراج الأرقام',
+                              style: TextStyle(fontSize: 12, color: Colors.white.withValues(alpha: 0.8)),
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 12),
-                    ElevatedButton.icon(
-                      onPressed: _extractedOrders.isEmpty || _isLoading
-                          ? null
-                          : () {
-                              if (_extractedOrders.length == 1) {
-                                _showContactOptions(_extractedOrders.first['mobile'].toString());
-                              } else {
-                                _showPhonesDialog();
-                              }
-                            },
-                      icon: Icon(
-                        _extractedOrders.isEmpty ? Icons.person_off : Icons.contact_phone,
-                        color: _extractedOrders.isEmpty ? Colors.grey.shade600 : Colors.white,
-                      ),
-                      label: Text(
-                        _extractedOrders.isEmpty
-                            ? 'لم يتم العثور على رقم هاتف'
-                            : _extractedOrders.length == 1
-                                ? 'التواصل مع العميل (${_extractedOrders.first['mobile']})'
-                                : 'مراسلة الأرقام المكتشفة (${_extractedOrders.length} أرقام)',
-                      ),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: _extractedOrders.isEmpty ? Colors.grey.shade300 : Colors.green.shade700,
-                        foregroundColor: _extractedOrders.isEmpty ? Colors.grey.shade600 : Colors.white,
-                        disabledBackgroundColor: Colors.grey.shade300,
-                        disabledForegroundColor: Colors.grey.shade600,
-                        minimumSize: const Size.fromHeight(50),
-                      ),
-                    ),
-                  ],
+                      const Icon(Icons.arrow_forward_ios_rounded, color: Colors.white, size: 18),
+                    ],
+                  ),
                 ),
               ),
             ),
-            const manifest_file.ManifestSheetScreen(),
-            const recycle_file.RecycleBinScreen(),
+            const SizedBox(height: 16),
+            Card(
+              elevation: 1,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+                side: BorderSide(color: Colors.grey.shade200),
+              ),
+              child: InkWell(
+                onTap: () => _navigateToScreen(const manifest_file.ManifestSheetScreen()),
+                borderRadius: BorderRadius.circular(16),
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: Colors.blueGrey.shade50,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Icon(Icons.assignment_turned_in_rounded, color: Colors.blueGrey, size: 24),
+                      ),
+                      const SizedBox(width: 16),
+                      const Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'عرض كشف التوصيل المالي (Manifest)',
+                              style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.black87),
+                            ),
+                            SizedBox(height: 2),
+                            Text(
+                              'مراجعة وتعديل بيانات الشحنات المسجلة',
+                              style: TextStyle(fontSize: 12, color: Colors.grey),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Icon(Icons.arrow_forward_ios_rounded, color: Colors.grey, size: 16),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Card(
+              elevation: 1,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+                side: BorderSide(color: Colors.grey.shade200),
+              ),
+              child: InkWell(
+                onTap: _extractedOrders.isEmpty || _isLoading
+                    ? null
+                    : () {
+                        if (_extractedOrders.length == 1) {
+                          _showContactOptions(_extractedOrders.first['mobile'].toString());
+                        } else {
+                          _showPhonesDialog();
+                        }
+                      },
+                borderRadius: BorderRadius.circular(16),
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: _extractedOrders.isEmpty ? Colors.grey.shade100 : Colors.green.shade50,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Icon(
+                          _extractedOrders.isEmpty ? Icons.person_off : Icons.contact_phone,
+                          color: _extractedOrders.isEmpty ? Colors.grey : Colors.green,
+                          size: 24,
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              _extractedOrders.isEmpty
+                                  ? 'لم يتم العثور على رقم هاتف'
+                                  : _extractedOrders.length == 1
+                                      ? 'التواصل مع العميل'
+                                      : 'مراسلة الأرقام المكتشفة',
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.bold,
+                                color: _extractedOrders.isEmpty ? Colors.grey : Colors.black87,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              _extractedOrders.isEmpty
+                                  ? 'قم بالتقاط صورة أولاً لاستخراج الأرقام'
+                                  : 'عدد الأرقام المتاحة: ${_extractedOrders.length}',
+                              style: const TextStyle(fontSize: 12, color: Colors.grey),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Icon(Icons.arrow_forward_ios_rounded, color: Colors.grey, size: 16),
+                    ],
+                  ),
+                ),
+              ),
+            ),
           ],
         ),
       ),

@@ -1,329 +1,136 @@
 import 'package:flutter/material.dart';
-import 'database_helper.dart';
+import 'package:intl/intl.dart' as intl;
 
-class ManifestSheetScreen extends StatefulWidget {
-  const ManifestSheetScreen({super.key});
+// ملاحظة: تأكد من استيراد ملف قاعدة البيانات الخاص بك هنا
+// import 'database_helper.dart';
+
+class RecycleBinScreen extends StatefulWidget {
+  const RecycleBinScreen({Key? key}) : super(key: key);
 
   @override
-  State<ManifestSheetScreen> createState() => _ManifestSheetScreenState();
+  State<RecycleBinScreen> createState() => _RecycleBinScreenState();
 }
 
-class _ManifestSheetScreenState extends State<ManifestSheetScreen> {
-  List<Map<String, dynamic>> _orders = [];
+class _RecycleBinScreenState extends State<RecycleBinScreen> {
+  List<Map<String, dynamic>> _deletedItems = [];
   bool _isLoading = true;
 
   @override
   void initState() {
     super.initState();
-    _loadManifestData();
+    _loadRecycleBinData();
   }
 
-  Future<void> _loadManifestData() async {
+  // تحميل العناصر المحذوفة من قاعدة البيانات
+  Future<void> _loadRecycleBinData() async {
     setState(() => _isLoading = true);
-    final orders = await DatabaseHelper.instance.getManifestItems();
-    setState(() {
-      _orders = orders;
-      _isLoading = false;
-    });
+    try {
+      // استبدال هذا الاستدعاء بالطريقة الصحيحة في DatabaseHelper لديك
+      // final data = await DatabaseHelper.instance.getRecycleBinItems();
+      
+      // بيانات تجريبية للعرض (يمكنك إزالتها واستخدام الدالة الحقيقية)
+      await Future.delayed(const Duration(milliseconds: 500));
+      final List<Map<String, dynamic>> data = []; 
+
+      setState(() {
+        _deletedItems = data;
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() => _isLoading = false);
+      _showSnackBar('حدث خطأ أثناء تحميل سلة المحذوفات: $e', Colors.red);
+    }
   }
 
-  int get _totalCount => _orders.length;
+  // استرجاع شحنة محددة إلى الكشف الرئيسي
+  Future<void> _restoreItem(int id) async {
+    try {
+      // await DatabaseHelper.instance.restoreFromRecycleBin(id);
+      _showSnackBar('تم استرجاع الشحنة بنجاح', Colors.green);
+      _loadRecycleBinData();
+    } catch (e) {
+      _showSnackBar('فشل استرجاع الشحنة: $e', Colors.red);
+    }
+  }
 
-  int get _deliveredCount =>
-      _orders.where((o) => o['status'] == 'تم التوصيل').length;
+  // حذف شحنة نهائياً
+  Future<void> _permanentlyDelete(int id) async {
+    bool? confirm = await _showConfirmDialog(
+      title: 'حذف نهائي',
+      content: 'هل أنت متأكد من حذف هذه الشحنة نهائياً؟ لا يمكن التراجع عن هذا الإجراء.',
+      confirmText: 'حذف نهائي',
+      confirmColor: Colors.red,
+    );
 
-  int get _pendingCount =>
-      _orders.where((o) => o['status'] == 'قيد التوصيل' || o['status'] == 'لم يتم التوصيل').length;
-
-  int get _delayedCount =>
-      _orders.where((o) => o['status'] == 'مؤجلة').length;
-
-  int get _cancelledCount =>
-      _orders.where((o) => o['status'] == 'ملغاة').length;
-
-  double get _totalExpectedAmount =>
-      _orders.fold(0.0, (sum, item) => sum + (item['collectionAmount'] ?? 0.0));
-
-  double get _totalCollectedAmount =>
-      _orders.fold(0.0, (sum, item) => sum + (item['collectionAmount'] ?? 0.0));
-
-  double get _totalDriverShare =>
-      _orders.fold(0.0, (sum, item) => sum + 2.0);
-
-  double get _totalShopShare =>
-      _orders.fold(0.0, (sum, item) => sum + ((item['collectionAmount'] ?? 0.0) - 2.0));
-
-  Map<String, Map<String, dynamic>> get _shopSummary {
-    final Map<String, Map<String, dynamic>> summary = {};
-
-    for (var order in _orders) {
-      final shop = (order['pageName'] != null && order['pageName'].toString().isNotEmpty) 
-          ? order['pageName'].toString() 
-          : 'عام / غير محدد';
-          
-      if (!summary.containsKey(shop)) {
-        summary[shop] = {
-          'count': 0,
-          'totalCollected': 0.0,
-          'shopShare': 0.0,
-          'deliveryFee': 0.0,
-        };
+    if (confirm == true) {
+      try {
+        // await DatabaseHelper.instance.permanentlyDelete(id);
+        _showSnackBar('تم حذف الشحنة نهائياً', Colors.grey);
+        _loadRecycleBinData();
+      } catch (e) {
+        _showSnackBar('فشل الحذف النهائي: $e', Colors.red);
       }
-      double amount = (order['collectionAmount'] ?? 0.0) is int 
-          ? (order['collectionAmount'] as int).toDouble() 
-          : (order['collectionAmount'] ?? 0.0);
-
-      summary[shop]!['count'] = (summary[shop]!['count'] as int) + 1;
-      summary[shop]!['totalCollected'] = (summary[shop]!['totalCollected'] as double) + amount;
-      summary[shop]!['shopShare'] = (summary[shop]!['shopShare'] as double) + amount;
-      summary[shop]!['deliveryFee'] = (summary[shop]!['deliveryFee'] as double) + 2.0;
-    }
-
-    return summary;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Directionality(
-      textDirection: TextDirection.rtl,
-      child: Scaffold(
-        appBar: AppBar(
-          title: const Text('كشف المانفيست والتقارير'),
-          backgroundColor: Colors.teal,
-          foregroundColor: Colors.white,
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.refresh),
-              tooltip: 'تحديث البيانات',
-              onPressed: _loadManifestData,
-            ),
-            IconButton(
-              icon: const Icon(Icons.print),
-              tooltip: 'طباعة الكشف',
-              onPressed: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('جاري تجهيز الكشف للطباعة...')),
-                );
-              },
-            ),
-          ],
-        ),
-        body: _isLoading
-            ? const Center(child: CircularProgressIndicator())
-            : _orders.isEmpty
-                ? const Center(
-                    child: Text(
-                      'لا توجد شحنات مسجلة في الكشف الحالي',
-                      style: TextStyle(fontSize: 16, color: Colors.grey),
-                    ),
-                  )
-                : SingleChildScrollView(
-                    padding: const EdgeInsets.all(12.0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _buildFinancialSummaryCard(),
-                        const SizedBox(height: 12),
-                        _buildStatusSummaryCard(),
-                        const SizedBox(height: 16),
-                        const Text(
-                          'ملخص المستحقات حسب المتجر',
-                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                        ),
-                        const SizedBox(height: 8),
-                        _buildShopSummaryTable(),
-                        const SizedBox(height: 16),
-                        const Text(
-                          'تفاصيل شحنات المانفيست',
-                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                        ),
-                        const SizedBox(height: 8),
-                        _buildOrdersTable(),
-                      ],
-                    ),
-                  ),
-      ),
-    );
-  }
-
-  Widget _buildFinancialSummaryCard() {
-    return Card(
-      elevation: 3,
-      color: Colors.teal.shade50,
-      child: Padding(
-        padding: const EdgeInsets.all(14.0),
-        child: Column(
-          children: [
-            const Text(
-              'الإجمالي المالي المباشر (من قاعدة البيانات)',
-              style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
-            ),
-            const Divider(),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                _statItem('المبلغ المتوقع', '$_totalExpectedAmount د.أ', Colors.black),
-                _statItem('المحصل فعلياً', '$_totalCollectedAmount د.أ', Colors.blue),
-              ],
-            ),
-            const SizedBox(height: 10),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                _statItem('صافي للمتاجر', '$_totalShopShare د.أ', Colors.orange.shade800),
-                _statItem('أجرة السائق', '$_totalDriverShare د.أ', Colors.green.shade800),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildStatusSummaryCard() {
-    return Card(
-      elevation: 2,
-      child: Padding(
-        padding: const EdgeInsets.all(12.0),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceAround,
-          children: [
-            _badgeCount('الكل', _totalCount, Colors.grey.shade700),
-            _badgeCount('مكتمل', _deliveredCount, Colors.green),
-            _badgeCount('قيد التوصيل', _pendingCount, Colors.blue),
-            _badgeCount('مؤجل', _delayedCount, Colors.orange),
-            _badgeCount('ملغى', _cancelledCount, Colors.red),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildShopSummaryTable() {
-    final summary = _shopSummary;
-    return Card(
-      elevation: 2,
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: DataTable(
-          columns: const [
-            DataColumn(label: Text('المتجر / الصفحة')),
-            DataColumn(label: Text('عدد الشحنات')),
-            DataColumn(label: Text('المحصل')),
-            DataColumn(label: Text('أجرة التوصيل')),
-            DataColumn(label: Text('صافي المتجر')),
-          ],
-          rows: summary.entries.map((entry) {
-            return DataRow(cells: [
-              DataCell(Text(entry.key, style: const TextStyle(fontWeight: FontWeight.bold))),
-              DataCell(Text('${entry.value['count']}')),
-              DataCell(Text('${entry.value['totalCollected']} د.أ')),
-              DataCell(Text('${entry.value['deliveryFee']} د.أ')),
-              DataCell(Text(
-                '${entry.value['shopShare']} د.أ',
-                style: const TextStyle(color: Colors.teal, fontWeight: FontWeight.bold),
-              )),
-            ]);
-          }).toList(),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildOrdersTable() {
-    return Card(
-      elevation: 2,
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: DataTable(
-          columns: const [
-            DataColumn(label: Text('#')),
-            DataColumn(label: Text('رقم الشحنة')),
-            DataColumn(label: Text('الهاتف')),
-            DataColumn(label: Text('العنوان')),
-            DataColumn(label: Text('الحالة')),
-            DataColumn(label: Text('المبلغ')),
-          ],
-          rows: List.generate(_orders.length, (index) {
-            final item = _orders[index];
-            final orderId = item['orderId']?.toString() ?? '-';
-            final mobile = item['mobile']?.toString() ?? '-';
-            final address = item['address']?.toString() ?? '-';
-            final status = item['status']?.toString() ?? 'قيد التوصيل';
-            final amount = item['collectionAmount']?.toString() ?? '0';
-
-            return DataRow(cells: [
-              DataCell(Text('${index + 1}')),
-              DataCell(Text(orderId)),
-              DataCell(Text(mobile)),
-              DataCell(Text(address)),
-              DataCell(
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: _getStatusColor(status).withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: Text(
-                    status,
-                    style: TextStyle(
-                      color: _getStatusColor(status),
-                      fontWeight: FontWeight.bold,
-                      fontSize: 12,
-                    ),
-                  ),
-                ),
-              ),
-              DataCell(Text('$amount د.أ')),
-            ]);
-          }),
-        ),
-      ),
-    );
-  }
-
-  Color _getStatusColor(String status) {
-    switch (status) {
-      case 'تم التوصيل':
-        return Colors.green;
-      case 'مؤجلة':
-        return Colors.orange;
-      case 'ملغاة':
-        return Colors.red;
-      default:
-        return Colors.blue;
     }
   }
 
-  Widget _statItem(String label, String value, Color color) {
-    return Column(
-      children: [
-        Text(label, style: const TextStyle(fontSize: 12, color: Colors.grey)),
-        const SizedBox(height: 2),
-        Text(
-          value,
-          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: color),
-        ),
-      ],
+  // تفريغ سلة المحذوفات بالكامل
+  Future<void> _emptyRecycleBin() async {
+    if (_deletedItems.isEmpty) return;
+
+    bool? confirm = await _showConfirmDialog(
+      title: 'تفريغ سلة المحذوفات',
+      content: 'هل أنت متأكد من رغبتك في حذف جميع العناصر المحذوفة نهائياً؟',
+      confirmText: 'تفريغ الكل',
+      confirmColor: Colors.red,
+    );
+
+    if (confirm == true) {
+      try {
+        // await DatabaseHelper.instance.clearRecycleBin();
+        _showSnackBar('تم تفريغ سلة المحذوفات بنجاح', Colors.grey);
+        _loadRecycleBinData();
+      } catch (e) {
+        _showSnackBar('فشل تفريغ السلة: $e', Colors.red);
+      }
+    }
+  }
+
+  // نافذة تأكيد عامة
+  Future<bool?> _showConfirmDialog({
+    required String title,
+    required String content,
+    required String confirmText,
+    required Color confirmColor,
+  }) {
+    return showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
+        content: Text(content),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('إلغاء', style: TextStyle(color: Colors.grey)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: confirmColor),
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(confirmText, style: const TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
     );
   }
 
-  Widget _badgeCount(String label, int count, Color color) {
-    return Column(
-      children: [
-        Text(
-          '$count',
-          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: color),
-        ),
-        Text(label, style: const TextStyle(fontSize: 11, color: Colors.grey)),
-      ],
+  void _showSnackBar(String message, Color color) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: color,
+        behavior: SnackBarBehavior.floating,
+      ),
     );
   }
-}
-
-// تصحيح الكلاس الأخير ليصبح Widget صحيحاً:
-class RecycleBinScreen extends StatelessWidget {
-  const RecycleBinScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -332,11 +139,105 @@ class RecycleBinScreen extends StatelessWidget {
       child: Scaffold(
         appBar: AppBar(
           title: const Text('سلة المحذوفات'),
-          backgroundColor: Colors.teal,
+          backgroundColor: Colors.teal.shade800,
+          foregroundColor: Colors.white,
+          actions: [
+            if (_deletedItems.isNotEmpty)
+              IconButton(
+                icon: const Icon(Icons.delete_sweep, size: 28),
+                tooltip: 'تفريغ السلة',
+                onPressed: _emptyRecycleBin,
+              ),
+          ],
         ),
-        body: const Center(
-          child: Text('لا توجد عناصر محذوفة حالياً'),
-        ),
+        body: _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : _deletedItems.isEmpty
+                ? Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.delete_outline, size: 80, color: Colors.grey.shade400),
+                        const SizedBox(height: 16),
+                        Text(
+                          'سلة المحذوفات فارغة',
+                          style: TextStyle(fontSize: 18, color: Colors.grey.shade600, fontWeight: FontWeight.bold),
+                        ),
+                      ],
+                    ),
+                  )
+                : ListView.builder(
+                    padding: const EdgeInsets.all(12),
+                    itemCount: _deletedItems.length,
+                    itemBuilder: (context, index) {
+                      final item = _deletedItems[index];
+                      final id = item['id'] ?? 0;
+                      final customerName = item['customer_name'] ?? 'بدون اسم';
+                      final phone = item['phone'] ?? 'لا يوجد هاتف';
+                      final storeName = item['store_name'] ?? 'متجر عام';
+                      final price = item['price'] ?? 0.0;
+
+                      return Card(
+                        margin: const EdgeInsets.symmetric(vertical: 6),
+                        elevation: 2,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        child: Padding(
+                          padding: const EdgeInsets.all(12.0),
+                          child: Row(
+                            children: [
+                              // أيقونة الشحنة
+                              Container(
+                                padding: const EdgeInsets.all(10),
+                                decoration: BoxDecoration(
+                                  color: Colors.red.shade50,
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Icon(Icons.inventory_2_outlined, color: Colors.red.shade400),
+                              ),
+                              const SizedBox(width: 12),
+                              
+                              // تفاصيل الشحنة
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      customerName,
+                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text('الهاتف: $phone | المتجر: $storeName',
+                                        style: TextStyle(color: Colors.grey.shade700, fontSize: 13)),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      'المبلغ: ${intl.NumberFormat('#,##0.00').format(price)} د.أ',
+                                      style: const TextStyle(color: Colors.teal, fontWeight: FontWeight.w600),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              
+                              // أزرار التحكم (استرجاع وحذف نهائي)
+                              Column(
+                                children: [
+                                  IconButton(
+                                    icon: const Icon(Icons.restore, color: Colors.green),
+                                    tooltip: 'استرجاع للكشف',
+                                    onPressed: () => _restoreItem(id),
+                                  ),
+                                  IconButton(
+                                    icon: const Icon(Icons.delete_forever, color: Colors.red),
+                                    tooltip: 'حذف نهائي',
+                                    onPressed: () => _permanentlyDelete(id),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
       ),
     );
   }
