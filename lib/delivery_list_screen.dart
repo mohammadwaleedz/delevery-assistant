@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'database_helper.dart'; // استيراد مساعد قاعدة البيانات والنموذج
+import 'database_helper.dart';
+import 'delivery_map_screen.dart'; // استدعاء شاشة الخريطة المضافة حديثاً
 
 void main() {
   runApp(const MyApp());
@@ -23,7 +24,6 @@ class MyApp extends StatelessWidget {
   }
 }
 
-// =================== الصفحة الرئيسية للتوصيل ===================
 class DriverOrdersScreen extends StatefulWidget {
   const DriverOrdersScreen({super.key});
 
@@ -77,6 +77,14 @@ class _DriverOrdersScreenState extends State<DriverOrdersScreen> {
 
   double get _totalShopPayable =>
       _orders.fold(0.0, (sum, item) => sum + item.shopShare);
+
+  String _getDisplayAddress(DeliveryOrder order) {
+    final address = order.address.trim();
+    if (address.isEmpty || address.contains('تحديد الموقع عبر الخريطة') || address.contains('تحديد الموقع')) {
+      return 'لم تطلب الموقع من العميل';
+    }
+    return address;
+  }
 
   Future<void> _openWhatsApp(String phone, String name) async {
     String formattedPhone = phone.replaceAll(' ', '');
@@ -159,6 +167,17 @@ class _DriverOrdersScreenState extends State<DriverOrdersScreen> {
           backgroundColor: Colors.teal,
           foregroundColor: Colors.white,
           actions: [
+            // زر الانتقال للخريطة التفاعلية في الأعلى
+            IconButton(
+              icon: const Icon(Icons.map_outlined),
+              tooltip: 'خريطة الشحنات',
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const DeliveryMapScreen()),
+                );
+              },
+            ),
             if (_selectedOrderDbIds.isNotEmpty)
               IconButton(
                 icon: const Icon(Icons.delete),
@@ -172,6 +191,49 @@ class _DriverOrdersScreenState extends State<DriverOrdersScreen> {
             ),
           ],
         ),
+        
+        // القائمة الجانبية (الـ 3 خطوط)
+        drawer: Drawer(
+          child: ListView(
+            padding: EdgeInsets.zero,
+            children: [
+              const DrawerHeader(
+                decoration: BoxDecoration(
+                  color: Colors.teal,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    Icon(Icons.local_shipping, color: Colors.white, size: 40),
+                    SizedBox(height: 10),
+                    Text(
+                      'إدارة شحنات السائق',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              ListTile(
+                leading: const Icon(Icons.map_outlined, color: Colors.teal),
+                title: const Text('خريطة الشحنات التفاعلية', style: TextStyle(fontWeight: FontWeight.w600)),
+                onTap: () {
+                  Navigator.pop(context); // إغلاق القائمة أولاً
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => const DeliveryMapScreen()),
+                  );
+                },
+              ),
+              const Divider(),
+            ],
+          ),
+        ),
+
         body: _isLoading
             ? const Center(child: CircularProgressIndicator())
             : Column(
@@ -198,10 +260,14 @@ class _DriverOrdersScreenState extends State<DriverOrdersScreen> {
                               final order = filteredList[index];
                               final isSelected = order.id != null &&
                                   _selectedOrderDbIds.contains(order.id);
+                              final displayAddress = _getDisplayAddress(order);
+                              final hasValidAddr = displayAddress != 'لم تطلب الموقع من العميل';
 
                               return _OrderCard(
                                 order: order,
                                 isSelected: isSelected,
+                                displayAddress: displayAddress,
+                                hasValidAddress: hasValidAddr,
                                 onSelectChanged: (val) {
                                   if (order.id == null) return;
                                   setState(() {
@@ -226,8 +292,6 @@ class _DriverOrdersScreenState extends State<DriverOrdersScreen> {
     );
   }
 }
-
-// =================== قسم الملخص المالي ===================
 
 class _SummarySection extends StatelessWidget {
   final double totalCollected;
@@ -276,8 +340,6 @@ class _SummarySection extends StatelessWidget {
     );
   }
 }
-
-// =================== قسم البحث والتصفية ===================
 
 class _FilterBarSection extends StatelessWidget {
   final String searchQuery;
@@ -345,11 +407,11 @@ class _FilterBarSection extends StatelessWidget {
   }
 }
 
-// =================== كارت عرض الشحنة ===================
-
 class _OrderCard extends StatelessWidget {
   final DeliveryOrder order;
   final bool isSelected;
+  final String displayAddress;
+  final bool hasValidAddress;
   final ValueChanged<bool?> onSelectChanged;
   final VoidCallback onEdit;
   final VoidCallback onCall;
@@ -358,6 +420,8 @@ class _OrderCard extends StatelessWidget {
   const _OrderCard({
     required this.order,
     required this.isSelected,
+    required this.displayAddress,
+    required this.hasValidAddress,
     required this.onSelectChanged,
     required this.onEdit,
     required this.onCall,
@@ -417,7 +481,13 @@ class _OrderCard extends StatelessWidget {
             Text('العميل: ${order.customerName}',
                 style: const TextStyle(fontWeight: FontWeight.w600)),
             Text('المنطقة: ${order.region}'),
-            if (order.address.isNotEmpty) Text('العنوان: ${order.address}'),
+            Text(
+              'العنوان: $displayAddress',
+              style: TextStyle(
+                color: hasValidAddress ? Colors.black87 : Colors.orange.shade800,
+                fontWeight: hasValidAddress ? FontWeight.normal : FontWeight.bold,
+              ),
+            ),
             if (order.pageName.isNotEmpty) Text('المتجر: ${order.pageName}'),
             const SizedBox(height: 4),
             Row(
@@ -471,8 +541,6 @@ class _OrderCard extends StatelessWidget {
     );
   }
 }
-
-// =================== نافذة تعديل حالة الشحنة ===================
 
 class _StatusEditDialog extends StatefulWidget {
   final DeliveryOrder order;
@@ -640,7 +708,6 @@ class _StatusEditDialogState extends State<_StatusEditDialog> {
               foregroundColor: Colors.white,
             ),
             onPressed: () {
-              // الاستخدام النظيف والمختصر لـ copyWith بدلاً من التمرير اليدوي الخاطئ
               final updatedOrder = widget.order.copyWith(
                 status: _selectedStatus,
                 paymentMethod: _selectedPaymentMethod,

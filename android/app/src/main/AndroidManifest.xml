@@ -6,6 +6,10 @@
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
 
+    <!-- الأذونات الخاصة بتحديد الموقع الجغرافي (للمسار الذكي وتحديث الأقرب تلقائياً) -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+
     <!-- الاستعلامات للسماح بتشغيل التطبيقات الخارجية (واتساب، الاتصال، الخرائط) على أندرويد 11 فما فوق -->
     <queries>
         <!-- للاتصال الهاتفي -->

@@ -20,6 +20,7 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
     _loadRecycleBinData();
   }
 
+  /// جلب العناصر المحذوفة بشكل تفاعلي ومباشر من قاعدة البيانات وتحديث الحالة لمنع أي عرض نصوص ثابتة خاطئة
   Future<void> _loadRecycleBinData() async {
     setState(() => _isLoading = true);
     try {
@@ -82,12 +83,13 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
     try {
       await action();
       _showSnackBar(successMessage, successColor);
-      _loadRecycleBinData();
+      await _loadRecycleBinData(); // إعادة التحميل مباشرة لتحديث الواجهة فوراً
     } catch (e) {
       _showSnackBar('حدث خطأ: $e', Colors.red);
     }
   }
 
+  /// استرجاع العنصر الفعلي من سلة المحذوفات باستخدام دالة DatabaseHelper الفعالة
   Future<void> _restoreItem(int id) => _handleAction(
         action: () async {
           await DatabaseHelper.instance.restoreFromRecycleBin(id);
@@ -104,7 +106,7 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
     );
 
     if (confirm == true) {
-      _handleAction(
+      await _handleAction(
         action: () async {
           await DatabaseHelper.instance.permanentlyDelete(id);
         },
@@ -125,7 +127,7 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
     );
 
     if (confirm == true) {
-      _handleAction(
+      await _handleAction(
         action: () async {
           await DatabaseHelper.instance.clearRecycleBin();
         },
@@ -141,7 +143,7 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
       textDirection: TextDirection.rtl,
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('سلة المحذوفات'),
+          title: const Text('سلة المحذوفات التفاعلية'),
           backgroundColor: Colors.teal.shade800,
           foregroundColor: Colors.white,
           actions: [
@@ -163,7 +165,7 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
                         Icon(Icons.delete_outline, size: 80, color: Colors.grey.shade400),
                         const SizedBox(height: 16),
                         Text(
-                          'سلة المحذوفات فارغة',
+                          'سلة المحذوفات فارغة حالياً',
                           style: TextStyle(fontSize: 18, color: Colors.grey.shade600, fontWeight: FontWeight.bold),
                         ),
                       ],
@@ -175,11 +177,11 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
                     itemBuilder: (context, index) {
                       final item = _deletedItems[index];
                       final id = item['id'] ?? 0;
-                      final customerName = item['customer_name'] ?? 'بدون اسم';
-                      final phone = item['phone'] ?? 'لا يوجد هاتف';
-                      final storeName = item['store_name'] ?? 'متجر عام';
+                      final customerName = item['customer_name'] ?? item['name'] ?? 'بدون اسم';
+                      final phone = item['mobile'] ?? item['phone'] ?? 'لا يوجد هاتف';
+                      final storeName = item['store_name'] ?? item['store'] ?? 'متجر عام';
                       final price = item['price'] ?? 0.0;
-                      final formattedPrice = intl.NumberFormat('#,##0.00').format(price);
+                      final formattedPrice = intl.NumberFormat('#,##0.00').format(price is String ? double.tryParse(price) ?? 0.0 : price);
 
                       return Card(
                         margin: const EdgeInsets.symmetric(vertical: 6),
@@ -223,7 +225,7 @@ class _RecycleBinScreenState extends State<RecycleBinScreen> {
                                 children: [
                                   IconButton(
                                     icon: const Icon(Icons.restore, color: Colors.green),
-                                    tooltip: 'استرجاع للكشف',
+                                    tooltip: 'استرجاع الشحنة',
                                     onPressed: () => _restoreItem(id),
                                   ),
                                   IconButton(

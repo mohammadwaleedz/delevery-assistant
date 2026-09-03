@@ -5,7 +5,7 @@ class SecurityService {
   SecurityService._(); // منع إنشاء كائن من الفئة (Utility Class Pattern)
 
   // إعدادات التشفير المحسنة لنظامي التشغيل
-  static const _androidOptions = AndroidOptions(encryptedSharedPreferences: true);
+  static const _androidOptions = AndroidOptions();
   static const _iosOptions = IOSOptions(accessibility: KeychainAccessibility.first_unlock);
 
   static const _storage = FlutterSecureStorage(

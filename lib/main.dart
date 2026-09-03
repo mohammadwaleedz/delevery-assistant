@@ -1,17 +1,20 @@
-import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
-import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
-import 'package:url_launcher/url_launcher.dart';
+import 'app_theme.dart';
 import 'database_helper.dart';
-import 'security_service.dart';
-import 'settings_screen.dart';
-import 'app_theme.dart'; // استيراد الثيم الحقيقي
-import 'route_optimization_screen.dart'; // استيراد شاشة مسار التوصيل الذكي الجديدة
+import 'delivery_map_screen.dart';
 import 'manifest_sheet_screen.dart' as manifest_file;
 import 'recycle_bin_screen.dart' as recycle_file;
+import 'route_optimization_screen.dart';
+import 'security_service.dart';
+import 'settings_screen.dart';
+import 'package:flutter/material.dart';
+import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:geocoding/geocoding.dart' as geocoding;
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await DatabaseHelper.instance.database;
   runApp(const MyApp());
 }
 
@@ -23,7 +26,7 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'مساعد التوصيل',
-      theme: AppTheme.lightTheme, // الاعتماد على الثيم الحقيقي المستورد بنجاح
+      theme: AppTheme.lightTheme,
       home: const HomeScreen(),
     );
   }
@@ -259,7 +262,27 @@ class _HomeScreenState extends State<HomeScreen> {
             onPressed: () async {
               String newLocation = locationController.text.trim();
               if (newLocation.isNotEmpty) {
-                await DatabaseHelper.instance.updateManifestItemAddress(orderId, newLocation);
+                double? lat;
+                double? lng;
+
+                try {
+                  List<geocoding.Location> locations = await geocoding.locationFromAddress(newLocation);
+                  if (locations.isNotEmpty) {
+                    lat = locations.first.latitude;
+                    lng = locations.first.longitude;
+                  }
+                } catch (_) {
+                  lat = null;
+                  lng = null;
+                }
+
+                if (lat == null || lng == null) {
+                  if (!ctx.mounted) return;
+                  _showMessage('الموقع غير صحيح يرجى ادخال عنوان العميل بشكل صحيح');
+                  return; 
+                }
+
+                await DatabaseHelper.instance.updateManifestItemAddressWithCoords(orderId, newLocation, lat, lng);
                 
                 if (!mounted) return;
 
@@ -267,13 +290,15 @@ class _HomeScreenState extends State<HomeScreen> {
                   final index = _extractedOrders.indexWhere((o) => o['orderId'] == orderId);
                   if (index != -1) {
                     _extractedOrders[index]['address'] = newLocation;
+                    _extractedOrders[index]['lat'] = lat;
+                    _extractedOrders[index]['lng'] = lng;
                   }
                 });
 
                 setSheetState(() {});
                 if (!ctx.mounted) return;
                 Navigator.pop(ctx);
-                _showMessage('تم حفظ موقع العميل بنجاح');
+                _showMessage('تم حفظ موقع العميل بنجاح وتحديثه على الخريطة');
               }
             },
             child: const Text('حفظ الموقع'),
@@ -320,9 +345,15 @@ class _HomeScreenState extends State<HomeScreen> {
                       return Card(
                         margin: const EdgeInsets.only(bottom: 8),
                         child: ListTile(
-                          leading: Icon(
-                            hasLocation ? Icons.location_on : Icons.location_off, 
-                            color: hasLocation ? Colors.green : Colors.orange,
+                          leading: CircleAvatar(
+                            backgroundColor: Colors.green.shade100,
+                            child: Text(
+                              '${index + 1}',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: Colors.green,
+                              ),
+                            ),
                           ),
                           title: Text(phone, style: const TextStyle(fontWeight: FontWeight.bold)),
                           subtitle: Column(
@@ -409,7 +440,11 @@ class _HomeScreenState extends State<HomeScreen> {
       appBar: AppBar(
         title: const Text('مساعد التوصيل الاحترافي'),
         actions: [
-          // أيقونة مسار التوصيل الذكي الجديدة في الأعلى
+          IconButton(
+            icon: const Icon(Icons.map_outlined),
+            tooltip: 'خريطة الشحنات',
+            onPressed: () => _navigateToScreen(const DeliveryMapScreen()),
+          ),
           IconButton(
             icon: const Icon(Icons.alt_route_rounded),
             tooltip: 'مسار التوصيل الذكي',
@@ -438,6 +473,14 @@ class _HomeScreenState extends State<HomeScreen> {
               leading: const Icon(Icons.home_outlined, color: Colors.green),
               title: const Text('الرئيسية'),
               onTap: () => Navigator.pop(context),
+            ),
+            ListTile(
+              leading: const Icon(Icons.map_outlined, color: Colors.green),
+              title: const Text('خريطة الشحنات التفاعلية'),
+              onTap: () {
+                Navigator.pop(context);
+                _navigateToScreen(const DeliveryMapScreen());
+              },
             ),
             ListTile(
               leading: const Icon(Icons.alt_route_rounded, color: Colors.green),

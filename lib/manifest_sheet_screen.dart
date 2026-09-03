@@ -70,6 +70,14 @@ class _ManifestSheetScreenState extends State<ManifestSheetScreen> {
     return trimmed;
   }
 
+  String _getDisplayAddress(DeliveryOrder order) {
+    final address = order.address.trim();
+    if (address.isEmpty || address.contains('تحديد الموقع عبر الخريطة') || address.contains('تحديد الموقع')) {
+      return 'لم تطلب الموقع من العميل';
+    }
+    return address;
+  }
+
   Future<void> _launchWhatsApp(String phone) async {
     String formattedPhone = _formatPhone(phone);
     if (formattedPhone.startsWith('0')) {
@@ -158,7 +166,6 @@ class _ManifestSheetScreenState extends State<ManifestSheetScreen> {
     }
   }
 
-  // تحديث شحنة واحدة في قاعدة البيانات
   Future<void> _updateOrderInDb(DeliveryOrder order) async {
     try {
       await DatabaseHelper.instance.updateDeliveryOrder(order);
@@ -314,7 +321,17 @@ class _ManifestSheetScreenState extends State<ManifestSheetScreen> {
                               final order = _orders[index];
                               final isSelected = order.id != null &&
                                   _selectedOrderIds.contains(order.id);
+                              final displayAddress = _getDisplayAddress(order);
+                              final hasValidAddr = displayAddress != 'لم تقم بالتواصل مع العميل الآن';
 
+                              var text = Text(
+                                            'العنوان: ${order.region.isNotEmpty ? order.region : ''} - $displayAddress',
+                                            style: TextStyle(
+                                              fontSize: 13,
+                                              color: hasValidAddr ? Colors.grey.shade700 : Colors.orange.shade800,
+                                              fontWeight: hasValidAddr ? FontWeight.normal : FontWeight.bold,
+                                            ),
+                                          );
                               return Container(
                                 margin: const EdgeInsets.only(bottom: 12),
                                 child: Card(
@@ -426,13 +443,7 @@ class _ManifestSheetScreenState extends State<ManifestSheetScreen> {
                                         const SizedBox(height: 4),
                                         Padding(
                                           padding: const EdgeInsets.only(right: 36.0),
-                                          child: Text(
-                                            'عنوان: ${order.region.isNotEmpty ? order.region : 'عمان'} - ${order.address.isNotEmpty ? order.address : 'تحديد الموقع عبر الخريطة'}',
-                                            style: const TextStyle(
-                                              fontSize: 13,
-                                              color: Colors.grey,
-                                            ),
-                                          ),
+                                          child: text,
                                         ),
                                         const SizedBox(height: 10),
 
@@ -463,7 +474,7 @@ class _ManifestSheetScreenState extends State<ManifestSheetScreen> {
                                                       if (newValue != null) {
                                                         final updatedOrder = order.copyWith(paymentMethod: newValue);
                                                         setState(() {
-                                                          final index = _orders.indexOf(order);
+                                                          final index = _orders.indexWhere((o) => o.id == order.id);
                                                           if (index != -1) {
                                                             _orders[index] = updatedOrder;
                                                           }
@@ -505,7 +516,7 @@ class _ManifestSheetScreenState extends State<ManifestSheetScreen> {
                                                                 actualCollectedAmount: collected,
                                                               );
                                                               setState(() {
-                                                                final index = _orders.indexOf(order);
+                                                                final index = _orders.indexWhere((o) => o.id == order.id);
                                                                 if (index != -1) {
                                                                   _orders[index] = updatedOrder;
                                                                   _sortOrdersList();
@@ -524,7 +535,7 @@ class _ManifestSheetScreenState extends State<ManifestSheetScreen> {
                                                                 actualCollectedAmount: order.actualCollectedAmount + fee,
                                                               );
                                                               setState(() {
-                                                                final index = _orders.indexOf(order);
+                                                                final index = _orders.indexWhere((o) => o.id == order.id);
                                                                 if (index != -1) {
                                                                   _orders[index] = updatedOrder;
                                                                   _sortOrdersList();
@@ -536,7 +547,7 @@ class _ManifestSheetScreenState extends State<ManifestSheetScreen> {
                                                         } else {
                                                           final updatedOrder = order.copyWith(status: newValue);
                                                           setState(() {
-                                                            final index = _orders.indexOf(order);
+                                                            final index = _orders.indexWhere((o) => o.id == order.id);
                                                             if (index != -1) {
                                                               _orders[index] = updatedOrder;
                                                               _sortOrdersList();
@@ -609,6 +620,7 @@ class _ManifestSheetScreenState extends State<ManifestSheetScreen> {
                         setState(() {
                           for (int i = 0; i < _orders.length; i++) {
                             final order = _orders[i];
+                            // استخدام الـ id حصراً لربط التحديث بشكل قاطع ومأمون
                             if (order.id != null && _selectedOrderIds.contains(order.id)) {
                               _orders[i] = order.copyWith(
                                 status: selectedValue,
@@ -618,18 +630,16 @@ class _ManifestSheetScreenState extends State<ManifestSheetScreen> {
                           }
                           _sortOrdersList();
                         });
-                        // حفظ التعديلات الجماعية في قاعدة البيانات
                         for (int i = 0; i < _orders.length; i++) {
-                          if (_orders[i].id != null && _selectedOrderIds.contains(_orders[i].id)) {
-                            await _updateOrderInDb(_orders[i]);
+                          final order = _orders[i];
+                          if (order.id != null && _selectedOrderIds.contains(order.id)) {
+                            await _updateOrderInDb(order);
                           }
                         }
-                        if (mounted) {
-                          // ignore: use_build_context_synchronously
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('تم تطبيق التعديلات وحفظها بنجاح')),
-                          );
-                        }
+                        if (!context.mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('تم تطبيق التعديلات وحفظها بنجاح')),
+                        );
                       },
                     );
                   } else {
@@ -642,11 +652,9 @@ class _ManifestSheetScreenState extends State<ManifestSheetScreen> {
                       }
                       _sortOrdersList();
                     });
-                    // تنفيذ الحفظ الجماعي
                     _saveBulkUpdates();
                   }
                 } else {
-                  // تغيير طريقة الدفع للكل
                   setState(() {
                     for (int i = 0; i < _orders.length; i++) {
                       final order = _orders[i];
@@ -666,12 +674,12 @@ class _ManifestSheetScreenState extends State<ManifestSheetScreen> {
     );
   }
 
-  // دالة مساعدة لحفظ التحديثات الجماعية العادية في قاعدة البيانات
   Future<void> _saveBulkUpdates() async {
     try {
       for (int i = 0; i < _orders.length; i++) {
-        if (_orders[i].id != null && _selectedOrderIds.contains(_orders[i].id)) {
-          await DatabaseHelper.instance.updateDeliveryOrder(_orders[i]);
+        final order = _orders[i];
+        if (order.id != null && _selectedOrderIds.contains(order.id)) {
+          await DatabaseHelper.instance.updateDeliveryOrder(order);
         }
       }
       if (mounted) {

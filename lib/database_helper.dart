@@ -1,6 +1,13 @@
 // database_helper.dart
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
+import 'package:geolocator/geolocator.dart'; // مكتبة حساب المسافات الجغرافية وتحديد الموقع[cite: 3]
+
+class Coords {
+  final double lat;
+  final double lng;
+  Coords(this.lat, this.lng);
+}
 
 class DeliveryOrder {
   final int? id;
@@ -20,6 +27,9 @@ class DeliveryOrder {
   final bool isFeeCollectedOnCancel;
   final String notes;
   final bool isDeleted;
+  final double? lat; // خط الطول للتوجيه والخرائط[cite: 3]
+  final double? lng; // خط العرض للتوجيه والخرائط[cite: 3]
+  final double? distance; // المسافة المحسوبة لحظياً عن المستخدم[cite: 3]
 
   DeliveryOrder({
     this.id,
@@ -39,6 +49,9 @@ class DeliveryOrder {
     this.isFeeCollectedOnCancel = false,
     this.notes = '',
     this.isDeleted = false,
+    this.lat,
+    this.lng,
+    this.distance,
   });
 
   DeliveryOrder copyWith({
@@ -59,6 +72,9 @@ class DeliveryOrder {
     bool? isFeeCollectedOnCancel,
     String? notes,
     bool? isDeleted,
+    double? lat,
+    double? lng,
+    double? distance,
   }) {
     return DeliveryOrder(
       id: id ?? this.id,
@@ -78,6 +94,9 @@ class DeliveryOrder {
       isFeeCollectedOnCancel: isFeeCollectedOnCancel ?? this.isFeeCollectedOnCancel,
       notes: notes ?? this.notes,
       isDeleted: isDeleted ?? this.isDeleted,
+      lat: lat ?? this.lat,
+      lng: lng ?? this.lng,
+      distance: distance ?? this.distance,
     );
   }
 
@@ -100,6 +119,8 @@ class DeliveryOrder {
       'isFeeCollectedOnCancel': isFeeCollectedOnCancel ? 1 : 0,
       'notes': notes,
       'isDeleted': isDeleted ? 1 : 0,
+      'lat': lat,
+      'lng': lng,
     };
   }
 
@@ -122,6 +143,9 @@ class DeliveryOrder {
       isFeeCollectedOnCancel: map['isFeeCollectedOnCancel'] == 1,
       notes: map['notes'] ?? map['itemDescription'] ?? '',
       isDeleted: map['isDeleted'] == 1,
+      lat: (map['lat'] as num?)?.toDouble(),
+      lng: (map['lng'] as num?)?.toDouble(),
+      distance: (map['distance'] as num?)?.toDouble(),
     );
   }
 }
@@ -144,7 +168,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 4,
+      version: 6,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE manifest_items (
@@ -164,15 +188,19 @@ class DatabaseHelper {
             paymentMethod TEXT,
             isFeeCollectedOnCancel INTEGER,
             notes TEXT,
-            isDeleted INTEGER DEFAULT 0
+            isDeleted INTEGER DEFAULT 0,
+            lat REAL,
+            lng REAL
           )
         ''');
       },
       onUpgrade: (db, oldVersion, newVersion) async {
-        // تم استبدال الحذف التدميري (DROP TABLE) بطريقة ترقية آمنة تضمن عدم ضياع بيانات المستخدم
-        if (oldVersion < 4) {
-          // التحقق من وجود الأعمدة أو إضافة أي تعديلات تدريجية بلطف عند التحديث
-          // مثال: إضافة أعمدة مفقودة إن وجدت بدلاً من تفريغ الجدول بالكامل
+        if (oldVersion < 5) {
+          try { await db.execute("ALTER TABLE manifest_items ADD COLUMN lat REAL;"); } catch (_) {}
+          try { await db.execute("ALTER TABLE manifest_items ADD COLUMN lng REAL;"); } catch (_) {}
+        }
+        if (oldVersion < 6) {
+          try { await db.execute("ALTER TABLE manifest_items ADD COLUMN isDeleted INTEGER DEFAULT 0;"); } catch (_) {}
         }
       },
     );
@@ -197,6 +225,8 @@ class DatabaseHelper {
       isFeeCollectedOnCancel: row['isFeeCollectedOnCancel'] == 1 ? true : false,
       notes: row['itemDescription'] ?? row['notes'] ?? '',
       isDeleted: false,
+      lat: (row['lat'] as num?)?.toDouble(),
+      lng: (row['lng'] as num?)?.toDouble(),
     );
     return await db.insert('manifest_items', order.toMap());
   }
@@ -215,6 +245,96 @@ class DatabaseHelper {
       orderBy: 'id DESC',
     );
     return result.map((json) => DeliveryOrder.fromMap(json)).toList();
+  }
+
+  Future<List<Map<String, dynamic>>> getSortedCustomersByDistance() async {
+    try {
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        final orders = await getDeliveryOrders();
+        return orders.map((e) => e.toMap()).toList();
+      }
+
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) {
+          final orders = await getDeliveryOrders();
+          return orders.map((e) => e.toMap()).toList();
+        }
+      }
+      
+      if (permission == LocationPermission.deniedForever) {
+        final orders = await getDeliveryOrders();
+        return orders.map((e) => e.toMap()).toList();
+      }
+
+      Position currentPosition = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      );
+
+      final db = await database;
+      final result = await db.query(
+        'manifest_items',
+        where: 'isDeleted = ? OR isDeleted IS NULL',
+        whereArgs: [0],
+      );
+
+      List<Map<String, dynamic>> customersWithDistance = [];
+
+      for (var row in result) {
+        Map<String, dynamic> mutableCustomer = Map.from(row);
+        double? destLat = (mutableCustomer['lat'] as num?)?.toDouble();
+        double? destLng = (mutableCustomer['lng'] as num?)?.toDouble();
+
+        if (destLat == null || destLng == null || destLat == 0 || destLng == 0) {
+          String link = mutableCustomer['address']?.toString() ?? '';
+          if (!link.startsWith('http')) {
+            link = mutableCustomer['notes']?.toString() ?? '';
+          }
+          
+          Coords? extractedCoords = _extractCoordsFromUrl(link);
+          if (extractedCoords != null) {
+            destLat = extractedCoords.lat;
+            destLng = extractedCoords.lng;
+          }
+        }
+
+        double distance = 999999.0;
+        if (destLat != null && destLng != null && destLat != 0 && destLng != 0) {
+          distance = Geolocator.distanceBetween(
+            currentPosition.latitude,
+            currentPosition.longitude,
+            destLat,
+            destLng,
+          );
+        }
+
+        mutableCustomer['distance'] = distance;
+        customersWithDistance.add(mutableCustomer);
+      }
+
+      customersWithDistance.sort((a, b) => (a['distance'] as double).compareTo(b['distance'] as double));
+      return customersWithDistance;
+    } catch (_) {
+      final orders = await getDeliveryOrders();
+      return orders.map((e) => e.toMap()).toList();
+    }
+  }
+
+  Coords? _extractCoordsFromUrl(String url) {
+    try {
+      RegExp regExp = RegExp(r'(@|query=)(-?\d+\.\d+),(-?\d+\.\d+)');
+      var match = regExp.firstMatch(url);
+      if (match != null && match.groupCount >= 3) {
+        double? lat = double.tryParse(match.group(2)!);
+        double? lng = double.tryParse(match.group(3)!);
+        if (lat != null && lng != null) {
+          return Coords(lat, lng);
+        }
+      }
+    } catch (_) {}
+    return null;
   }
 
   Future<int> updateDeliveryOrder(DeliveryOrder order) async {
@@ -237,11 +357,35 @@ class DatabaseHelper {
     );
   }
 
-  Future<int> updateManifestItemAddress(String orderId, String newAddress) async {
+  Future<int> updateManifestItemAddress(dynamic identifier, String newAddress) async {
+    final db = await instance.database;
+    if (identifier is int) {
+      return await db.update(
+        'manifest_items',
+        {'address': newAddress},
+        where: 'id = ?',
+        whereArgs: [identifier],
+      );
+    } else {
+      return await db.update(
+        'manifest_items',
+        {'address': newAddress},
+        where: 'orderId = ? OR id = ?',
+        whereArgs: [identifier.toString(), int.tryParse(identifier.toString()) ?? -1],
+      );
+    }
+  }
+
+  /// تحديث عنوان الشحنة مع إحداثياتها الجغرافية الحقيقية المستخرجة
+  Future<int> updateManifestItemAddressWithCoords(String orderId, String address, double lat, double lng) async {
     final db = await instance.database;
     return await db.update(
       'manifest_items',
-      {'address': newAddress},
+      {
+        'address': address,
+        'lat': lat,
+        'lng': lng,
+      },
       where: 'orderId = ?',
       whereArgs: [orderId],
     );
@@ -306,7 +450,6 @@ class DatabaseHelper {
     );
   }
 
-  // إضافة دالة آمنة لإغلاق قاعدة البيانات لمنع تسريب الموارد
   Future<void> close() async {
     final db = _database;
     if (db != null && db.isOpen) {
