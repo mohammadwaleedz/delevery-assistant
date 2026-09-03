@@ -1,7 +1,9 @@
 // database_helper.dart
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
-import 'package:geolocator/geolocator.dart'; // مكتبة حساب المسافات الجغرافية وتحديد الموقع[cite: 3]
+import 'package:geolocator/geolocator.dart';
+import 'app_constants.dart';
+import 'app_utils.dart';
 
 class Coords {
   final double lat;
@@ -27,9 +29,9 @@ class DeliveryOrder {
   final bool isFeeCollectedOnCancel;
   final String notes;
   final bool isDeleted;
-  final double? lat; // خط الطول للتوجيه والخرائط[cite: 3]
-  final double? lng; // خط العرض للتوجيه والخرائط[cite: 3]
-  final double? distance; // المسافة المحسوبة لحظياً عن المستخدم[cite: 3]
+  final double? lat; // خط الطول للتوجيه والخرائط
+  final double? lng; // خط العرض للتوجيه والخرائط
+  final double? distance; // المسافة المحسوبة لحظياً عن المستخدم
 
   DeliveryOrder({
     this.id,
@@ -45,7 +47,7 @@ class DeliveryOrder {
     required this.actualCollectedAmount,
     required this.driverShare,
     required this.shopShare,
-    this.paymentMethod = 'نقداً',
+    this.paymentMethod = PaymentMethod.cash,
     this.isFeeCollectedOnCancel = false,
     this.notes = '',
     this.isDeleted = false,
@@ -125,6 +127,8 @@ class DeliveryOrder {
   }
 
   factory DeliveryOrder.fromMap(Map<String, dynamic> map) {
+    // توحيد الحالة من أي صيغة قديمة
+    final rawStatus = map['status'] ?? OrderStatus.pending;
     return DeliveryOrder(
       id: map['id'],
       phone: map['phone'] ?? map['mobile'] ?? '',
@@ -133,13 +137,13 @@ class DeliveryOrder {
       region: map['region'] ?? '',
       address: map['address'] ?? '',
       pageName: map['pageName'] ?? '',
-      status: map['status'] ?? 'قيد التوصيل',
+      status: StatusUtils.normalize(rawStatus.toString()),
       totalAmount: (map['totalAmount'] as num?)?.toDouble() ?? (map['collectionAmount'] as num?)?.toDouble() ?? 0.0,
       deliveryFee: (map['deliveryFee'] as num?)?.toDouble() ?? 0.0,
       actualCollectedAmount: (map['actualCollectedAmount'] as num?)?.toDouble() ?? 0.0,
       driverShare: (map['driverShare'] as num?)?.toDouble() ?? 0.0,
       shopShare: (map['shopShare'] as num?)?.toDouble() ?? 0.0,
-      paymentMethod: map['paymentMethod'] ?? 'نقداً',
+      paymentMethod: PaymentMethod.normalize(map['paymentMethod']?.toString() ?? PaymentMethod.cash),
       isFeeCollectedOnCancel: map['isFeeCollectedOnCancel'] == 1,
       notes: map['notes'] ?? map['itemDescription'] ?? '',
       isDeleted: map['isDeleted'] == 1,
@@ -207,7 +211,6 @@ class DatabaseHelper {
   }
 
   Future<int> insertManifestItem(Map<String, dynamic> row) async {
-    final db = await instance.database;
     final order = DeliveryOrder(
       phone: row['mobile'] ?? row['phone'] ?? '',
       customerName: row['customerName'] ?? row['name'] ?? 'بدون اسم',
@@ -215,34 +218,67 @@ class DatabaseHelper {
       region: row['region'] ?? '',
       address: row['address'] ?? '',
       pageName: row['pageName'] ?? '',
-      status: row['status'] ?? 'قيد التوصيل',
+      status: StatusUtils.normalize(row['status']?.toString()),
       totalAmount: (row['collectionAmount'] as num?)?.toDouble() ?? (row['totalAmount'] as num?)?.toDouble() ?? 0.0,
       deliveryFee: (row['deliveryFee'] as num?)?.toDouble() ?? 2.0,
       actualCollectedAmount: (row['actualCollectedAmount'] as num?)?.toDouble() ?? 0.0,
       driverShare: (row['driverShare'] as num?)?.toDouble() ?? 2.0,
       shopShare: (row['shopShare'] as num?)?.toDouble() ?? 0.0,
-      paymentMethod: row['paymentMethod'] ?? 'نقداً',
+      paymentMethod: PaymentMethod.normalize(row['paymentMethod']?.toString() ?? PaymentMethod.cash),
       isFeeCollectedOnCancel: row['isFeeCollectedOnCancel'] == 1 ? true : false,
       notes: row['itemDescription'] ?? row['notes'] ?? '',
       isDeleted: false,
       lat: (row['lat'] as num?)?.toDouble(),
       lng: (row['lng'] as num?)?.toDouble(),
     );
-    return await db.insert('manifest_items', order.toMap());
+    final db = await instance.database;
+    return await db.insert(DatabaseTables.manifestItems, order.toMap());
+  }
+
+  /// إدراج عدة عناصر دفعة واحدة (تحسين الأداء)
+  Future<void> insertManifestItemsBatch(List<Map<String, dynamic>> rows) async {
+    final db = await instance.database;
+    final batch = db.batch();
+    
+    for (final row in rows) {
+      final order = DeliveryOrder(
+        phone: row['mobile'] ?? row['phone'] ?? '',
+        customerName: row['customerName'] ?? row['name'] ?? 'بدون اسم',
+        orderId: row['orderId'] ?? '',
+        region: row['region'] ?? '',
+        address: row['address'] ?? '',
+        pageName: row['pageName'] ?? '',
+        status: StatusUtils.normalize(row['status']?.toString()),
+        totalAmount: (row['collectionAmount'] as num?)?.toDouble() ?? (row['totalAmount'] as num?)?.toDouble() ?? 0.0,
+        deliveryFee: (row['deliveryFee'] as num?)?.toDouble() ?? 2.0,
+        actualCollectedAmount: (row['actualCollectedAmount'] as num?)?.toDouble() ?? 0.0,
+        driverShare: (row['driverShare'] as num?)?.toDouble() ?? 2.0,
+        shopShare: (row['shopShare'] as num?)?.toDouble() ?? 0.0,
+        paymentMethod: PaymentMethod.normalize(row['paymentMethod']?.toString() ?? PaymentMethod.cash),
+        isFeeCollectedOnCancel: row['isFeeCollectedOnCancel'] == 1 ? true : false,
+        notes: row['itemDescription'] ?? row['notes'] ?? '',
+        isDeleted: false,
+        lat: (row['lat'] as num?)?.toDouble(),
+        lng: (row['lng'] as num?)?.toDouble(),
+      );
+      batch.insert(DatabaseTables.manifestItems, order.toMap());
+    }
+    
+    await batch.commit(noResult: true);
   }
 
   Future<int> insertDeliveryOrder(DeliveryOrder order) async {
     final db = await instance.database;
-    return await db.insert('manifest_items', order.toMap());
+    return await db.insert(DatabaseTables.manifestItems, order.toMap());
   }
 
   Future<List<DeliveryOrder>> getDeliveryOrders() async {
     final db = await instance.database;
     final result = await db.query(
-      'manifest_items',
-      where: 'isDeleted = ? OR isDeleted IS NULL',
+      DatabaseTables.manifestItems,
+      where: '${DatabaseColumns.isDeleted} = ? OR ${DatabaseColumns.isDeleted} IS NULL',
       whereArgs: [0],
-      orderBy: 'id DESC',
+      orderBy: '${DatabaseColumns.id} DESC',
     );
     return result.map((json) => DeliveryOrder.fromMap(json)).toList();
   }
@@ -275,8 +311,8 @@ class DatabaseHelper {
 
       final db = await database;
       final result = await db.query(
-        'manifest_items',
-        where: 'isDeleted = ? OR isDeleted IS NULL',
+        DatabaseTables.manifestItems,
+        where: '${DatabaseColumns.isDeleted} = ? OR ${DatabaseColumns.isDeleted} IS NULL',
         whereArgs: [0],
       );
 
@@ -289,14 +325,14 @@ class DatabaseHelper {
 
         if (destLat == null || destLng == null || destLat == 0 || destLng == 0) {
           String link = mutableCustomer['address']?.toString() ?? '';
-          if (!link.startsWith('http')) {
+          if (!AddressUtils.isUrl(link)) {
             link = mutableCustomer['notes']?.toString() ?? '';
           }
           
-          Coords? extractedCoords = _extractCoordsFromUrl(link);
-          if (extractedCoords != null) {
-            destLat = extractedCoords.lat;
-            destLng = extractedCoords.lng;
+          final extracted = AddressUtils.extractCoordsFromUrl(link);
+          if (extracted != null) {
+            destLat = extracted.$1;
+            destLng = extracted.$2;
           }
         }
 
@@ -322,27 +358,12 @@ class DatabaseHelper {
     }
   }
 
-  Coords? _extractCoordsFromUrl(String url) {
-    try {
-      RegExp regExp = RegExp(r'(@|query=)(-?\d+\.\d+),(-?\d+\.\d+)');
-      var match = regExp.firstMatch(url);
-      if (match != null && match.groupCount >= 3) {
-        double? lat = double.tryParse(match.group(2)!);
-        double? lng = double.tryParse(match.group(3)!);
-        if (lat != null && lng != null) {
-          return Coords(lat, lng);
-        }
-      }
-    } catch (_) {}
-    return null;
-  }
-
   Future<int> updateDeliveryOrder(DeliveryOrder order) async {
     final db = await instance.database;
     return await db.update(
-      'manifest_items',
+      DatabaseTables.manifestItems,
       order.toMap(),
-      where: 'id = ?',
+      where: '${DatabaseColumns.id} = ?',
       whereArgs: [order.id],
     );
   }
@@ -350,9 +371,9 @@ class DatabaseHelper {
   Future<int> updateManifestItem(int id, Map<String, dynamic> values) async {
     final db = await instance.database;
     return await db.update(
-      'manifest_items',
+      DatabaseTables.manifestItems,
       values,
-      where: 'id = ?',
+      where: '${DatabaseColumns.id} = ?',
       whereArgs: [id],
     );
   }
@@ -361,32 +382,47 @@ class DatabaseHelper {
     final db = await instance.database;
     if (identifier is int) {
       return await db.update(
-        'manifest_items',
-        {'address': newAddress},
-        where: 'id = ?',
+        DatabaseTables.manifestItems,
+        {DatabaseColumns.address: newAddress},
+        where: '${DatabaseColumns.id} = ?',
         whereArgs: [identifier],
       );
     } else {
       return await db.update(
-        'manifest_items',
-        {'address': newAddress},
-        where: 'orderId = ? OR id = ?',
+        DatabaseTables.manifestItems,
+        {DatabaseColumns.address: newAddress},
+        where: '${DatabaseColumns.orderId} = ? OR ${DatabaseColumns.id} = ?',
         whereArgs: [identifier.toString(), int.tryParse(identifier.toString()) ?? -1],
       );
     }
+  }
+
+  /// تحديث عنوان الشحنة مع إحداثياتها الجغرافية باستخدام id المضمون
+  Future<int> updateManifestItemAddressWithCoordsById(int id, String address, double lat, double lng) async {
+    final db = await instance.database;
+    return await db.update(
+      DatabaseTables.manifestItems,
+      {
+        DatabaseColumns.address: address,
+        DatabaseColumns.lat: lat,
+        DatabaseColumns.lng: lng,
+      },
+      where: '${DatabaseColumns.id} = ?',
+      whereArgs: [id],
+    );
   }
 
   /// تحديث عنوان الشحنة مع إحداثياتها الجغرافية الحقيقية المستخرجة
   Future<int> updateManifestItemAddressWithCoords(String orderId, String address, double lat, double lng) async {
     final db = await instance.database;
     return await db.update(
-      'manifest_items',
+      DatabaseTables.manifestItems,
       {
-        'address': address,
-        'lat': lat,
-        'lng': lng,
+        DatabaseColumns.address: address,
+        DatabaseColumns.lat: lat,
+        DatabaseColumns.lng: lng,
       },
-      where: 'orderId = ?',
+      where: '${DatabaseColumns.orderId} = ?',
       whereArgs: [orderId],
     );
   }
@@ -394,9 +430,9 @@ class DatabaseHelper {
   Future<int> deleteDeliveryOrder(int id) async {
     final db = await instance.database;
     return await db.update(
-      'manifest_items',
-      {'isDeleted': 1},
-      where: 'id = ?',
+      DatabaseTables.manifestItems,
+      {DatabaseColumns.isDeleted: 1},
+      where: '${DatabaseColumns.id} = ?',
       whereArgs: [id],
     );
   }
@@ -405,29 +441,45 @@ class DatabaseHelper {
     return await deleteDeliveryOrder(id);
   }
 
+  /// حذف عدة شحنات دفعة واحدة (نقل إلى سلة المهملات)
+  Future<void> deleteDeliveryOrdersBatch(List<int> ids) async {
+    if (ids.isEmpty) return;
+    final db = await instance.database;
+    final batch = db.batch();
+    for (final id in ids) {
+      batch.update(
+        DatabaseTables.manifestItems,
+        {DatabaseColumns.isDeleted: 1},
+        where: '${DatabaseColumns.id} = ?',
+        whereArgs: [id],
+      );
+    }
+    await batch.commit(noResult: true);
+  }
+
   Future<List<Map<String, dynamic>>> getRecycleBinItems() async {
     final db = await instance.database;
     final result = await db.query(
-      'manifest_items',
-      where: 'isDeleted = ?',
+      DatabaseTables.manifestItems,
+      where: '${DatabaseColumns.isDeleted} = ?',
       whereArgs: [1],
-      orderBy: 'id DESC',
+      orderBy: '${DatabaseColumns.id} DESC',
     );
     return result.map((row) => {
       'id': row['id'],
-      'customer_name': row['customerName'],
-      'phone': row['phone'],
-      'store_name': row['pageName'],
-      'price': row['totalAmount'],
+      'customer_name': row[DatabaseColumns.customerName],
+      'phone': row[DatabaseColumns.phone],
+      'store_name': row[DatabaseColumns.pageName],
+      'price': row[DatabaseColumns.totalAmount],
     }).toList();
   }
 
   Future<int> restoreFromRecycleBin(int id) async {
     final db = await instance.database;
     return await db.update(
-      'manifest_items',
-      {'isDeleted': 0},
-      where: 'id = ?',
+      DatabaseTables.manifestItems,
+      {DatabaseColumns.isDeleted: 0},
+      where: '${DatabaseColumns.id} = ?',
       whereArgs: [id],
     );
   }
@@ -435,8 +487,8 @@ class DatabaseHelper {
   Future<int> permanentlyDelete(int id) async {
     final db = await instance.database;
     return await db.delete(
-      'manifest_items',
-      where: 'id = ?',
+      DatabaseTables.manifestItems,
+      where: '${DatabaseColumns.id} = ?',
       whereArgs: [id],
     );
   }
@@ -444,8 +496,8 @@ class DatabaseHelper {
   Future<int> clearRecycleBin() async {
     final db = await instance.database;
     return await db.delete(
-      'manifest_items',
-      where: 'isDeleted = ?',
+      DatabaseTables.manifestItems,
+      where: '${DatabaseColumns.isDeleted} = ?',
       whereArgs: [1],
     );
   }

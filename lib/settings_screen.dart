@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'app_theme.dart';
 import 'security_service.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -106,23 +107,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     final confirm = await showDialog<bool>(
       context: context,
-      builder: (dialogContext) => Directionality(
-        textDirection: TextDirection.rtl,
-        child: AlertDialog(
-          title: const Text('إلغاء كلمة المرور'),
-          content: const Text('هل أنت متأكد من رغبتك في إلغاء رمز الأمان؟ سيتمكن أي شخص من فتح التطبيق.'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext, false),
-              child: const Text('إلغاء'),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-              onPressed: () => Navigator.pop(dialogContext, true),
-              child: const Text('إزالة رمز الأمان', style: TextStyle(color: Colors.white)),
-            ),
-          ],
-        ),
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('إلغاء كلمة المرور'),
+        content: const Text('هل أنت متأكد من رغبتك في إلغاء رمز الأمان؟ سيتمكن أي شخص من فتح التطبيق.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('إلغاء'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('إزالة رمز الأمان', style: TextStyle(color: Colors.white)),
+          ),
+        ],
       ),
     );
 
@@ -163,77 +161,72 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Directionality(
-      textDirection: TextDirection.rtl,
-      child: Scaffold(
-        appBar: AppBar(
-          title: const Text('إعدادات الأمان'),
-          backgroundColor: Colors.green,
-          foregroundColor: Colors.white,
-        ),
-        body: _isLoading
-            ? const Center(child: CircularProgressIndicator())
-            : Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: ListView(
-                  children: [
-                    Text(
-                      _isPinSet ? 'تغيير كلمة المرور' : 'إنشاء كلمة مرور جديدة',
-                      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                    ),
-                    const SizedBox(height: 16),
-                    if (_isPinSet) ...[
-                      _buildPinTextField(
-                        controller: _oldPinController,
-                        labelText: 'كلمة المرور القديمة',
-                        prefixIcon: Icons.lock_clock,
-                        obscureText: _hideOldPin,
-                        onToggleVisibility: () => setState(() => _hideOldPin = !_hideOldPin),
-                      ),
-                      const SizedBox(height: 12),
-                    ],
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('إعدادات الأمان'),
+      ),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: ListView(
+                children: [
+                  Text(
+                    _isPinSet ? 'تغيير كلمة المرور' : 'إنشاء كلمة مرور جديدة',
+                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 16),
+                  if (_isPinSet) ...[
                     _buildPinTextField(
-                      controller: _newPinController,
-                      labelText: 'كلمة المرور الجديدة',
-                      prefixIcon: Icons.lock_outline,
-                      obscureText: _hideNewPin,
-                      onToggleVisibility: () => setState(() => _hideNewPin = !_hideNewPin),
+                      controller: _oldPinController,
+                      labelText: 'كلمة المرور القديمة',
+                      prefixIcon: Icons.lock_clock,
+                      obscureText: _hideOldPin,
+                      onToggleVisibility: () => setState(() => _hideOldPin = !_hideOldPin),
                     ),
                     const SizedBox(height: 12),
-                    _buildPinTextField(
-                      controller: _confirmPinController,
-                      labelText: 'تأكيد كلمة المرور الجديدة',
-                      prefixIcon: Icons.lock_reset,
-                      obscureText: _hideConfirmPin,
-                      onToggleVisibility: () => setState(() => _hideConfirmPin = !_hideConfirmPin),
+                  ],
+                  _buildPinTextField(
+                    controller: _newPinController,
+                    labelText: 'كلمة المرور الجديدة',
+                    prefixIcon: Icons.lock_outline,
+                    obscureText: _hideNewPin,
+                    onToggleVisibility: () => setState(() => _hideNewPin = !_hideNewPin),
+                  ),
+                  const SizedBox(height: 12),
+                  _buildPinTextField(
+                    controller: _confirmPinController,
+                    labelText: 'تأكيد كلمة المرور الجديدة',
+                    prefixIcon: Icons.lock_reset,
+                    obscureText: _hideConfirmPin,
+                    onToggleVisibility: () => setState(() => _hideConfirmPin = !_hideConfirmPin),
+                  ),
+                  const SizedBox(height: 20),
+                  ElevatedButton.icon(
+                    onPressed: _saveOrUpdatePin,
+                    icon: const Icon(Icons.save),
+                    label: Text(_isPinSet ? 'تحديث كلمة المرور' : 'حفظ كلمة المرور'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.primaryColor,
+                      foregroundColor: Colors.white,
+                      minimumSize: const Size.fromHeight(50),
                     ),
-                    const SizedBox(height: 20),
-                    ElevatedButton.icon(
-                      onPressed: _saveOrUpdatePin,
-                      icon: const Icon(Icons.save),
-                      label: Text(_isPinSet ? 'تحديث كلمة المرور' : 'حفظ كلمة المرور'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.green,
-                        foregroundColor: Colors.white,
+                  ),
+                  if (_isPinSet) ...[
+                    const SizedBox(height: 12),
+                    OutlinedButton.icon(
+                      onPressed: _removePin,
+                      icon: const Icon(Icons.no_encryption, color: Colors.red),
+                      label: const Text('إلغاء حماية كلمة المرور', style: TextStyle(color: Colors.red)),
+                      style: OutlinedButton.styleFrom(
+                        side: const BorderSide(color: Colors.red),
                         minimumSize: const Size.fromHeight(50),
                       ),
                     ),
-                    if (_isPinSet) ...[
-                      const SizedBox(height: 12),
-                      OutlinedButton.icon(
-                        onPressed: _removePin,
-                        icon: const Icon(Icons.no_encryption, color: Colors.red),
-                        label: const Text('إلغاء حماية كلمة المرور', style: TextStyle(color: Colors.red)),
-                        style: OutlinedButton.styleFrom(
-                          side: const BorderSide(color: Colors.red),
-                          minimumSize: const Size.fromHeight(50),
-                        ),
-                      ),
-                    ],
                   ],
-                ),
+                ],
               ),
-      ),
+            ),
     );
   }
 }

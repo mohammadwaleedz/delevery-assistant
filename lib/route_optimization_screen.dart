@@ -7,6 +7,10 @@ import 'package:http/http.dart' as http;
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:path_provider/path_provider.dart';
+import 'package:geocoding/geocoding.dart' as geocoding;
+import 'app_constants.dart';
+import 'app_theme.dart';
+import 'app_utils.dart';
 import 'database_helper.dart';
 
 class RouteOptimizationScreen extends StatefulWidget {
@@ -37,15 +41,13 @@ class _RouteOptimizationScreenState extends State<RouteOptimizationScreen> {
     if (lat != null && lng != null && lat.toString().isNotEmpty && lng.toString().isNotEmpty && lat.toString() != '0' && lng.toString() != '0') {
       return true;
     }
-    if ((address.startsWith('http://') || address.startsWith('https://')) && !address.contains('تحديد الموقع')) {
+    if (AddressUtils.isUrl(address) && !address.contains('تحديد الموقع')) {
       return true;
     }
-    if (notes.startsWith('http://') || notes.startsWith('https://')) {
+    if (AddressUtils.isUrl(notes)) {
       return true;
     }
-    if (address.isNotEmpty && 
-        !address.contains('تحديد الموقع عبر الخريطة') && 
-        !address.contains('تحديد الموقع')) {
+    if (!AddressUtils.isPlaceholder(address)) {
       return true;
     }
     return false;
@@ -85,8 +87,6 @@ class _RouteOptimizationScreenState extends State<RouteOptimizationScreen> {
 
   /// دالة يتم استدعاؤها عند الوصول للعميل لإعادة حساب الموقع وترتيب المسار تلقائياً
   Future<void> _onClientReached(int index) async {
-    // يمكنك هنا تحديث حالة العميل إلى مكتمل في قاعدة البيانات إن أردت
-    
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Text('تم الوصول للعميل! جاري إعادة تحديد موقعك وترتيب الأقرب...'),
@@ -112,16 +112,14 @@ class _RouteOptimizationScreenState extends State<RouteOptimizationScreen> {
       }
     }
     
-    if (address.startsWith('http://') || address.startsWith('https://')) {
+    if (AddressUtils.isUrl(address)) {
       return address;
     }
-    if (notes.startsWith('http://') || notes.startsWith('https://')) {
+    if (AddressUtils.isUrl(notes)) {
       return notes;
     }
     
-    if (address.isNotEmpty && 
-        !address.contains('تحديد الموقع عبر الخريطة') && 
-        !address.contains('تحديد الموقع')) {
+    if (!AddressUtils.isPlaceholder(address)) {
       return 'https://www.google.com/maps/search/?api=1&query=${Uri.encodeComponent(address)}';
     }
     
@@ -176,9 +174,9 @@ class _RouteOptimizationScreenState extends State<RouteOptimizationScreen> {
 
   String _getDisplayAddress(Map<String, dynamic> order) {
     final address = order['address']?.toString() ?? '';
-    if (address.startsWith('http')) return address;
+    if (AddressUtils.isUrl(address)) return address;
     final notes = order['notes']?.toString() ?? '';
-    if (notes.startsWith('http')) return notes;
+    if (AddressUtils.isUrl(notes)) return notes;
     return address.isEmpty ? 'تحديد الموقع عبر الخريطة' : address;
   }
 
@@ -312,12 +310,11 @@ class _RouteOptimizationScreenState extends State<RouteOptimizationScreen> {
                     headers: ['التسلسل', 'رقم الشحنة', 'المسافة التقريبية', 'الهاتف', 'العنوان / الرابط'],
                     data: List<List<String>>.generate(itemsToExport.length, (index) {
                       final order = itemsToExport[index];
-                      double dist = order['distance'] ?? 0.0;
-                      String distStr = dist > 1000 ? '${(dist / 1000).toStringAsFixed(1)} كم' : '${dist.toStringAsFixed(0)} متر';
+                      double dist = (order['distance'] as num?)?.toDouble() ?? 0.0;
                       return [
                         '${index + 1}',
                         '${order['orderId'] ?? order['id'] ?? 'غير معروف'}',
-                        distStr,
+                        DistanceUtils.format(dist),
                         '${order['mobile'] ?? order['phone'] ?? 'بدون'}',
                         _getDisplayAddress(order),
                       ];
@@ -370,7 +367,7 @@ class _RouteOptimizationScreenState extends State<RouteOptimizationScreen> {
 
     if (confirmed == true) {
       final db = await DatabaseHelper.instance.database;
-      await db.delete('manifest_items');
+      await db.delete(DatabaseTables.manifestItems);
 
       if (!mounted) return;
       setState(() {
@@ -382,6 +379,168 @@ class _RouteOptimizationScreenState extends State<RouteOptimizationScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('تم مسح السجلات بنجاح')),
+      );
+    }
+  }
+
+  Future<void> _startNavigationToCoords(double latitude, double longitude) async {
+    final Uri googleMapsUrl = Uri.parse(
+      'https://www.google.com/maps/search/?api=1&query=$latitude,$longitude'
+    );
+    try {
+      if (await canLaunchUrl(googleMapsUrl)) {
+        await launchUrl(googleMapsUrl, mode: LaunchMode.externalApplication);
+      } else {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text(AppMessages.errorMaps)),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('تعذر فتح تطبيق الخرائط: $e')),
+      );
+    }
+  }
+
+  Future<void> _showLocationInputDialog(Map<String, dynamic> order) async {
+    final TextEditingController locationController = TextEditingController();
+    bool isSaveEnabled = false;
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: Text('تحديث موقع: ${order['customerName'] ?? order['customer_name'] ?? 'العميل'}'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: locationController,
+                    autofocus: true,
+                    decoration: const InputDecoration(
+                      hintText: 'أدخل عنوان العميل أو المنطقة الجغرافية',
+                      prefixIcon: Icon(Icons.location_on),
+                      border: OutlineInputBorder(),
+                    ),
+                    onChanged: (value) {
+                      setDialogState(() {
+                        isSaveEnabled = value.trim().isNotEmpty;
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'سيتم تحويل العنوان إلى إحداثيات وحفظه تلقائياً',
+                    style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  child: const Text('إلغاء'),
+                  onPressed: () => Navigator.pop(dialogContext),
+                ),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: isSaveEnabled ? Colors.green : Colors.grey,
+                    foregroundColor: Colors.white,
+                  ),
+                  onPressed: isSaveEnabled
+                      ? () async {
+                          final newLocation = locationController.text.trim();
+                          Navigator.pop(dialogContext);
+                          await _saveLocation(order, newLocation);
+                        }
+                      : null,
+                  child: const Text('حفظ وبحث'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _saveLocation(Map<String, dynamic> order, String newLocation) async {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Row(
+          children: [
+            SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)),
+            SizedBox(width: 12),
+            Text('جاري البحث عن الموقع وحفظه...'),
+          ],
+        ),
+        duration: Duration(seconds: 3),
+      ),
+    );
+
+    try {
+      final geocodingService = geocoding.Geocoding();
+      List<geocoding.Location> locations = await geocodingService.locationFromAddress(newLocation);
+
+      if (locations.isNotEmpty) {
+        double lat = locations.first.latitude;
+        double lng = locations.first.longitude;
+
+        final orderId = order['id'];
+        if (orderId != null) {
+          await DatabaseHelper.instance.updateManifestItemAddressWithCoordsById(orderId as int, newLocation, lat, lng);
+        }
+
+        // تحديث العنوان في الواجهة مباشرة
+        setState(() {
+          final index = _optimizedOrders.indexWhere((o) => o['id'] == orderId);
+          if (index != -1) {
+            _optimizedOrders[index]['address'] = newLocation;
+            _optimizedOrders[index]['lat'] = lat;
+            _optimizedOrders[index]['lng'] = lng;
+          }
+        });
+
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.check_circle, color: Colors.white),
+                const SizedBox(width: 8),
+                Expanded(child: Text('${AppMessages.successLocationSaved}\n$newLocation')),
+              ],
+            ),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 3),
+            action: SnackBarAction(
+              label: 'عرض على الخريطة',
+              textColor: Colors.white,
+              onPressed: () => _startNavigationToCoords(lat, lng),
+            ),
+          ),
+        );
+      } else {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(AppMessages.errorLocationInvalid),
+            backgroundColor: Colors.red,
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('خطأ في البحث عن الموقع: $e'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 3),
+        ),
       );
     }
   }
@@ -435,15 +594,15 @@ class _RouteOptimizationScreenState extends State<RouteOptimizationScreen> {
                   children: [
                     Container(
                       padding: const EdgeInsets.all(12),
-                      color: Colors.green.shade50,
+                      color: AppTheme.primaryLight,
                       child: Row(
                         children: [
-                          const Icon(Icons.alt_route, color: Colors.green),
+                          const Icon(Icons.alt_route, color: AppTheme.primaryColor),
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
                               'ترتيب تلقائي حسب الأقرب | المحطات: ${_optimizedOrders.length} | المحددة: ${_selectedIndices.length}',
-                              style: TextStyle(color: Colors.green.shade800, fontSize: 12, fontWeight: FontWeight.bold),
+                              style: const TextStyle(color: AppTheme.primaryColor, fontSize: 12, fontWeight: FontWeight.bold),
                             ),
                           ),
                         ],
@@ -459,19 +618,16 @@ class _RouteOptimizationScreenState extends State<RouteOptimizationScreen> {
                           final isCurrentNavTarget = _currentNavigationIndex == index;
                           final hasLocation = _hasValidLocation(order);
 
-                          double distanceInMeters = order['distance'] ?? 0.0;
-                          String distanceText = distanceInMeters > 1000
-                              ? '${(distanceInMeters / 1000).toStringAsFixed(1)} كم'
-                              : '${distanceInMeters.toStringAsFixed(0)} متر';
+                          double distanceInMeters = (order['distance'] as num?)?.toDouble() ?? 0.0;
 
                           return Card(
                             margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                             elevation: isSelected ? 3 : 1,
-                            color: isCurrentNavTarget ? Colors.green.shade50 : (isSelected ? Colors.white : Colors.grey.shade100),
+                            color: isCurrentNavTarget ? AppTheme.primaryLight : (isSelected ? Colors.white : Colors.grey.shade100),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(10),
                               side: BorderSide(
-                                color: isCurrentNavTarget ? Colors.green : (isSelected ? Colors.green.shade300 : Colors.transparent),
+                                color: isCurrentNavTarget ? AppTheme.primaryColor : (isSelected ? Colors.green.shade300 : Colors.transparent),
                                 width: isCurrentNavTarget ? 2.0 : 1.5,
                               ),
                             ),
@@ -482,7 +638,7 @@ class _RouteOptimizationScreenState extends State<RouteOptimizationScreen> {
                                 children: [
                                   Checkbox(
                                     value: isSelected,
-                                    activeColor: Colors.green,
+                                    activeColor: AppTheme.primaryColor,
                                     onChanged: (bool? value) {
                                       setState(() {
                                         if (value == true) {
@@ -495,7 +651,7 @@ class _RouteOptimizationScreenState extends State<RouteOptimizationScreen> {
                                   ),
                                   CircleAvatar(
                                     radius: 14,
-                                    backgroundColor: index == 0 ? Colors.green : (isCurrentNavTarget ? Colors.orange : (hasLocation ? Colors.blueGrey : Colors.grey)),
+                                    backgroundColor: index == 0 ? AppTheme.primaryColor : (isCurrentNavTarget ? Colors.orange : (hasLocation ? Colors.blueGrey : Colors.grey)),
                                     foregroundColor: Colors.white,
                                     child: Text(
                                       '${index + 1}',
@@ -519,7 +675,7 @@ class _RouteOptimizationScreenState extends State<RouteOptimizationScreen> {
                                       borderRadius: BorderRadius.circular(10),
                                     ),
                                     child: Text(
-                                      index == 0 ? '📍 الأقرب إليك' : 'المسافة: $distanceText',
+                                      index == 0 ? '📍 الأقرب إليك' : 'المسافة: ${DistanceUtils.format(distanceInMeters)}',
                                       style: TextStyle(
                                         color: index == 0 ? Colors.green.shade800 : Colors.blue.shade800,
                                         fontSize: 11,
@@ -552,7 +708,12 @@ class _RouteOptimizationScreenState extends State<RouteOptimizationScreen> {
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
                                   IconButton(
-                                    icon: const Icon(Icons.directions_car, color: Colors.green, size: 22),
+                                    icon: const Icon(Icons.edit_location_alt, color: Colors.teal, size: 22),
+                                    tooltip: 'تحديث موقع العميل',
+                                    onPressed: () => _showLocationInputDialog(order),
+                                  ),
+                                  IconButton(
+                                    icon: const Icon(Icons.directions_car, color: AppTheme.primaryColor, size: 22),
                                     tooltip: 'بدء الملاحة لهذه المحطة',
                                     onPressed: () async {
                                       setState(() {
@@ -578,7 +739,7 @@ class _RouteOptimizationScreenState extends State<RouteOptimizationScreen> {
       floatingActionButton: _optimizedOrders.isNotEmpty
           ? FloatingActionButton.extended(
               onPressed: _startRouteNavigation,
-              backgroundColor: Colors.green,
+              backgroundColor: AppTheme.primaryColor,
               foregroundColor: Colors.white,
               icon: const Icon(Icons.navigation),
               label: Text('بدء ملاحة الأقرب (${_selectedIndices.length})'),

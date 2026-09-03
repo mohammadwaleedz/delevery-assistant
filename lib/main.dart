@@ -1,4 +1,6 @@
+import 'app_constants.dart';
 import 'app_theme.dart';
+import 'app_utils.dart';
 import 'database_helper.dart';
 import 'delivery_map_screen.dart';
 import 'manifest_sheet_screen.dart' as manifest_file;
@@ -27,6 +29,13 @@ class MyApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       title: 'مساعد التوصيل',
       theme: AppTheme.lightTheme,
+      // دعم RTL عام للتطبيق بالكامل
+      builder: (context, child) {
+        return Directionality(
+          textDirection: TextDirection.rtl,
+          child: child!,
+        );
+      },
       home: const HomeScreen(),
     );
   }
@@ -69,7 +78,8 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _verifyEnteredPin() async {
-    final isValid = await SecurityService.verifyPin(_pinInputController.text.trim());
+    final isValid =
+        await SecurityService.verifyPin(_pinInputController.text.trim());
     if (!mounted) return;
     if (isValid) {
       setState(() {
@@ -96,7 +106,8 @@ class _HomeScreenState extends State<HomeScreen> {
   void _showImageSourceDialog() {
     showModalBottomSheet(
       context: context,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (ctx) => SafeArea(
         child: Wrap(
           children: [
@@ -135,8 +146,13 @@ class _HomeScreenState extends State<HomeScreen> {
 
     final textRecognizer = TextRecognizer(script: TextRecognitionScript.latin);
     try {
-      final recognizedText = await textRecognizer.processImage(InputImage.fromFilePath(image.path));
-      final matches = RegExp(r'\+?[0-9]{8,15}').allMatches(recognizedText.text).map((m) => m.group(0)!).toSet().toList();
+      final recognizedText = await textRecognizer
+          .processImage(InputImage.fromFilePath(image.path));
+      final matches = RegExp(r'\+?[0-9]{8,15}')
+          .allMatches(recognizedText.text)
+          .map((m) => m.group(0)!)
+          .toSet()
+          .toList();
 
       List<Map<String, dynamic>> tempOrders = [];
       final nowIso = DateTime.now().toIso8601String();
@@ -145,11 +161,11 @@ class _HomeScreenState extends State<HomeScreen> {
         final orderData = {
           'orderId': '${1000 + i}',
           'mobile': matches[i],
-          'address': 'عمان - تحديد الموقع عبر الخريطة',
+          'address': DefaultAddresses.placeholder,
           'pcs': 1,
           'collectionAmount': 15.0,
           'itemDescription': 'طرد شحنة توصيل مستخرج',
-          'status': 'قيد التوصيل',
+          'status': OrderStatus.pending,
           'updatedAt': nowIso,
         };
         await DatabaseHelper.instance.insertManifestItem(orderData);
@@ -158,7 +174,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
       if (!mounted) return;
       setState(() => _extractedOrders = tempOrders);
-      _showMessage(matches.isEmpty ? 'لم يتم العثور على أرقام هواتف في الصورة' : 'تم استخراج وحفظ ${matches.length} رقم بنجاح');
+      _showMessage(matches.isEmpty
+          ? AppMessages.noPhonesFound
+          : 'تم استخراج وحفظ ${matches.length} رقم بنجاح');
     } catch (e) {
       _showMessage('حدث خطأ أثناء قراءة الصورة: $e');
     } finally {
@@ -168,15 +186,12 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _makePhoneCall(String phone) async {
-    String cleanPhone = phone.replaceAll(RegExp(r'[^\d]'), '');
-    if (!cleanPhone.startsWith('0') && cleanPhone.length == 9) cleanPhone = '0$cleanPhone';
-
-    final uri = Uri(scheme: 'tel', path: cleanPhone);
+    final uri = PhoneUtils.buildTelUri(phone);
     try {
       if (await canLaunchUrl(uri)) {
         await launchUrl(uri, mode: LaunchMode.platformDefault);
       } else {
-        _showMessage('تعذر فتح تطبيق الاتصال');
+        _showMessage(AppMessages.errorPhoneCall);
       }
     } catch (_) {
       _showMessage('حدث خطأ أثناء إجراء الاتصال');
@@ -184,15 +199,8 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _openWhatsApp(String phone) async {
-    String cleanPhone = phone.replaceAll(RegExp(r'[^\d]'), '');
-    if (cleanPhone.startsWith('0')) {
-      cleanPhone = '962${cleanPhone.substring(1)}';
-    } else if (!cleanPhone.startsWith('962') && cleanPhone.length == 9) {
-      cleanPhone = '962$cleanPhone';
-    }
-
-    const msg = "الله يعطيك العافية\nمعك مندوب شركة التوصيل\nإذا سمحت أرسل موقعك";
-    final uri = Uri.parse("https://wa.me/$cleanPhone?text=${Uri.encodeComponent(msg)}");
+    final uri =
+        PhoneUtils.buildWhatsAppUri(phone, AppMessages.whatsappDefaultMessage);
 
     try {
       if (await canLaunchUrl(uri)) {
@@ -200,7 +208,7 @@ class _HomeScreenState extends State<HomeScreen> {
         setState(() => _sentPhones.add(phone));
         await launchUrl(uri, mode: LaunchMode.externalApplication);
       } else {
-        _showMessage('تطبيق واتساب غير مثبت على الجهاز');
+        _showMessage(AppMessages.errorWhatsAppNotInstalled);
       }
     } catch (_) {
       _showMessage('تعذر إرسال الرسالة عبر واتساب');
@@ -210,24 +218,37 @@ class _HomeScreenState extends State<HomeScreen> {
   void _showContactOptions(String phone) {
     showModalBottomSheet(
       context: context,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (ctx) => SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(16.0),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text('خيارات التواصل ($phone)', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              Text('خيارات التواصل ($phone)',
+                  style: const TextStyle(
+                      fontWeight: FontWeight.bold, fontSize: 16)),
               const SizedBox(height: 16),
               ListTile(
-                leading: const CircleAvatar(backgroundColor: Colors.blue, child: Icon(Icons.phone, color: Colors.white)),
+                leading: const CircleAvatar(
+                    backgroundColor: Colors.blue,
+                    child: Icon(Icons.phone, color: Colors.white)),
                 title: const Text('اتصال هاتفي بشكل مباشر'),
-                onTap: () { Navigator.pop(ctx); _makePhoneCall(phone); },
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _makePhoneCall(phone);
+                },
               ),
               ListTile(
-                leading: const CircleAvatar(backgroundColor: Colors.green, child: Icon(Icons.chat, color: Colors.white)),
+                leading: const CircleAvatar(
+                    backgroundColor: Colors.green,
+                    child: Icon(Icons.chat, color: Colors.white)),
                 title: const Text('التواصل عبر واتساب'),
-                onTap: () { Navigator.pop(ctx); _openWhatsApp(phone); },
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _openWhatsApp(phone);
+                },
               ),
             ],
           ),
@@ -236,75 +257,98 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  void _showLocationInputDialog(String phone, String orderId, StateSetter setSheetState) {
+  void _showLocationInputDialog(
+      String phone, String orderId, StateSetter setSheetState) {
     final TextEditingController locationController = TextEditingController();
-    
+    bool hasLocationText = false;
+
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('تحديد موقع العميل (شحنة: $orderId)'),
-        content: TextField(
-          controller: locationController,
-          decoration: const InputDecoration(
-            labelText: 'أدخل تفاصيل الموقع أو العنوان',
-            hintText: 'مثال: عمان - الجبيهة - شارع الجامعة',
-            border: OutlineInputBorder(),
-          ),
-          autofocus: true,
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('إلغاء'),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white),
-            onPressed: () async {
-              String newLocation = locationController.text.trim();
-              if (newLocation.isNotEmpty) {
-                double? lat;
-                double? lng;
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (dialogContext, updateDialog) {
+            return AlertDialog(
+              title: Text('تحديد موقع العميل (شحنة: $orderId)'),
+              content: TextField(
+                controller: locationController,
+                decoration: const InputDecoration(
+                  labelText: 'أدخل تفاصيل الموقع أو العنوان',
+                  hintText: 'مثال: عمان - الجبيهة - شارع الجامعة',
+                  border: OutlineInputBorder(),
+                ),
+                autofocus: true,
+                onChanged: (value) {
+                  updateDialog(() {
+                    hasLocationText = value.trim().isNotEmpty;
+                  });
+                },
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('إلغاء'),
+                ),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor:
+                        hasLocationText ? Colors.green : Colors.grey.shade400,
+                    foregroundColor: Colors.white,
+                  ),
+                  onPressed: hasLocationText
+                      ? () async {
+                          String newLocation = locationController.text.trim();
 
-                try {
-                  List<geocoding.Location> locations = await geocoding.locationFromAddress(newLocation);
-                  if (locations.isNotEmpty) {
-                    lat = locations.first.latitude;
-                    lng = locations.first.longitude;
-                  }
-                } catch (_) {
-                  lat = null;
-                  lng = null;
-                }
+                          double? lat;
+                          double? lng;
 
-                if (lat == null || lng == null) {
-                  if (!ctx.mounted) return;
-                  _showMessage('الموقع غير صحيح يرجى ادخال عنوان العميل بشكل صحيح');
-                  return; 
-                }
+                          try {
+                            final geocoder = geocoding.Geocoding();
+                            List<geocoding.Location> locations =
+                                await geocoder.locationFromAddress(newLocation);
+                            if (locations.isNotEmpty) {
+                              lat = locations.first.latitude;
+                              lng = locations.first.longitude;
+                            }
+                          } catch (_) {
+                            lat = null;
+                            lng = null;
+                          }
 
-                await DatabaseHelper.instance.updateManifestItemAddressWithCoords(orderId, newLocation, lat, lng);
-                
-                if (!mounted) return;
+                          if (lat == null || lng == null) {
+                            if (!ctx.mounted) return;
+                            _showMessage(AppMessages.errorLocationInvalid);
+                            return;
+                          }
 
-                setState(() {
-                  final index = _extractedOrders.indexWhere((o) => o['orderId'] == orderId);
-                  if (index != -1) {
-                    _extractedOrders[index]['address'] = newLocation;
-                    _extractedOrders[index]['lat'] = lat;
-                    _extractedOrders[index]['lng'] = lng;
-                  }
-                });
+                          await DatabaseHelper.instance
+                              .updateManifestItemAddressWithCoords(
+                                  orderId, newLocation, lat, lng);
 
-                setSheetState(() {});
-                if (!ctx.mounted) return;
-                Navigator.pop(ctx);
-                _showMessage('تم حفظ موقع العميل بنجاح وتحديثه على الخريطة');
-              }
-            },
-            child: const Text('حفظ الموقع'),
-          ),
-        ],
-      ),
+                          if (!mounted) return;
+
+                          setState(() {
+                            final index = _extractedOrders
+                                .indexWhere((o) => o['orderId'] == orderId);
+                            if (index != -1) {
+                              _extractedOrders[index]['address'] = newLocation;
+                              _extractedOrders[index]['lat'] = lat;
+                              _extractedOrders[index]['lng'] = lng;
+                            }
+                          });
+
+                          setSheetState(() {});
+                          if (!ctx.mounted) return;
+                          Navigator.pop(ctx);
+                          _showMessage(AppMessages.successLocationSaved);
+                        }
+                      : null,
+                  child: const Text('حفظ الموقع'),
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
   }
 
@@ -312,7 +356,8 @@ class _HomeScreenState extends State<HomeScreen> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (ctx) => StatefulBuilder(
         builder: (context, setSheetState) => SafeArea(
           child: Padding(
@@ -323,10 +368,13 @@ class _HomeScreenState extends State<HomeScreen> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text('الأرقام المكتشفة (${_extractedOrders.length})', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+                    Text('الأرقام المكتشفة (${_extractedOrders.length})',
+                        style: const TextStyle(
+                            fontWeight: FontWeight.bold, fontSize: 18)),
                     Text(
-                      'تم تحديد مواقع لـ ${_extractedOrders.where((o) => o['address'] != 'عمان - تحديد الموقع عبر الخريطة').length}', 
-                      style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
+                      'تم تحديد مواقع لـ ${_extractedOrders.where((o) => !AddressUtils.isPlaceholder(o['address']?.toString())).length}',
+                      style:
+                          TextStyle(color: Colors.grey.shade600, fontSize: 13),
                     ),
                   ],
                 ),
@@ -340,7 +388,8 @@ class _HomeScreenState extends State<HomeScreen> {
                       final phone = order['mobile'].toString();
                       final orderId = order['orderId'].toString();
                       final currentAddress = order['address'] ?? '';
-                      bool hasLocation = currentAddress != 'عمان - تحديد الموقع عبر الخريطة' && currentAddress.isNotEmpty;
+                      bool hasLocation = !AddressUtils.isPlaceholder(
+                          currentAddress.toString());
 
                       return Card(
                         margin: const EdgeInsets.only(bottom: 8),
@@ -355,14 +404,20 @@ class _HomeScreenState extends State<HomeScreen> {
                               ),
                             ),
                           ),
-                          title: Text(phone, style: const TextStyle(fontWeight: FontWeight.bold)),
+                          title: Text(phone,
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.bold)),
                           subtitle: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text('رقم الشحنة: $orderId'),
                               Text(
-                                'الموقع: $currentAddress', 
-                                style: TextStyle(fontSize: 12, color: hasLocation ? Colors.black87 : Colors.grey),
+                                'الموقع: $currentAddress',
+                                style: TextStyle(
+                                    fontSize: 12,
+                                    color: hasLocation
+                                        ? Colors.black87
+                                        : Colors.grey),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                               ),
@@ -370,18 +425,23 @@ class _HomeScreenState extends State<HomeScreen> {
                           ),
                           isThreeLine: true,
                           trailing: ElevatedButton.icon(
-                            onPressed: () => _showLocationInputDialog(phone, orderId, setSheetState),
+                            onPressed: () => _showLocationInputDialog(
+                                phone, orderId, setSheetState),
                             icon: const Icon(Icons.edit_location_alt, size: 16),
                             label: const Text('الموقع'),
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: hasLocation ? Colors.green.shade50 : Colors.green,
-                              foregroundColor: hasLocation ? Colors.green.shade800 : Colors.white,
+                              backgroundColor: hasLocation
+                                  ? Colors.green.shade50
+                                  : Colors.green,
+                              foregroundColor: hasLocation
+                                  ? Colors.green.shade800
+                                  : Colors.white,
                               elevation: hasLocation ? 0 : 2,
                             ),
                           ),
-                          onTap: () { 
-                            Navigator.pop(ctx); 
-                            _showContactOptions(phone); 
+                          onTap: () {
+                            Navigator.pop(ctx);
+                            _showContactOptions(phone);
                           },
                         ),
                       );
@@ -408,7 +468,9 @@ class _HomeScreenState extends State<HomeScreen> {
               children: [
                 const Icon(Icons.lock_person, size: 80, color: Colors.green),
                 const SizedBox(height: 16),
-                const Text('ادخل كلمة المرور لدخول التطبيق', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                const Text('ادخل كلمة المرور لدخول التطبيق',
+                    style:
+                        TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 20),
                 TextField(
                   controller: _pinInputController,
@@ -416,7 +478,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   keyboardType: TextInputType.number,
                   textAlign: TextAlign.center,
                   style: const TextStyle(fontSize: 22, letterSpacing: 8),
-                  decoration: const InputDecoration(border: OutlineInputBorder(), hintText: '****'),
+                  decoration: const InputDecoration(
+                      border: OutlineInputBorder(), hintText: '****'),
                 ),
                 const SizedBox(height: 20),
                 ElevatedButton.icon(
@@ -464,10 +527,16 @@ class _HomeScreenState extends State<HomeScreen> {
               decoration: BoxDecoration(color: Colors.green),
               currentAccountPicture: CircleAvatar(
                 backgroundColor: Colors.white,
-                child: Text('د', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.green)),
+                child: Text('د',
+                    style: TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.green)),
               ),
-              accountName: Text('مساعد التوصيل', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-              accountEmail: Text('driver.account@app.com', style: TextStyle(fontSize: 12, color: Colors.white70)),
+              accountName: Text('مساعد التوصيل',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              accountEmail: Text('driver.account@app.com',
+                  style: TextStyle(fontSize: 12, color: Colors.white70)),
             ),
             ListTile(
               leading: const Icon(Icons.home_outlined, color: Colors.green),
@@ -499,7 +568,8 @@ class _HomeScreenState extends State<HomeScreen> {
               },
             ),
             ListTile(
-              leading: const Icon(Icons.delete_outline_rounded, color: Colors.green),
+              leading:
+                  const Icon(Icons.delete_outline_rounded, color: Colors.green),
               title: const Text('سلة المحذوفات'),
               onTap: () {
                 Navigator.pop(context);
@@ -527,13 +597,16 @@ class _HomeScreenState extends State<HomeScreen> {
               color: Colors.green,
               icon: _isLoading ? null : Icons.camera_alt_rounded,
               isLoading: _isLoading,
-              title: _isLoading ? 'جاري قراءة الصورة...' : 'إضافة صورة جديدة (كاميرا / معرض)',
+              title: _isLoading
+                  ? 'جاري قراءة الصورة...'
+                  : 'إضافة صورة جديدة (كاميرا / معرض)',
               subtitle: 'التقاط بوليصة الشحن أو الفاتورة واستخراج الأرقام',
               isPrimary: true,
             ),
             const SizedBox(height: 16),
             _buildActionCard(
-              onTap: () => _navigateToScreen(const manifest_file.ManifestSheetScreen()),
+              onTap: () =>
+                  _navigateToScreen(const manifest_file.ManifestSheetScreen()),
               color: Colors.blueGrey.shade50,
               iconColor: Colors.blueGrey,
               icon: Icons.assignment_turned_in_rounded,
@@ -546,17 +619,24 @@ class _HomeScreenState extends State<HomeScreen> {
               onTap: _extractedOrders.isEmpty || _isLoading
                   ? null
                   : () => _extractedOrders.length == 1
-                      ? _showContactOptions(_extractedOrders.first['mobile'].toString())
+                      ? _showContactOptions(
+                          _extractedOrders.first['mobile'].toString())
                       : _showPhonesDialog(),
-              color: _extractedOrders.isEmpty ? Colors.grey.shade100 : Colors.green.shade50,
+              color: _extractedOrders.isEmpty
+                  ? Colors.grey.shade100
+                  : Colors.green.shade50,
               iconColor: _extractedOrders.isEmpty ? Colors.grey : Colors.green,
-              icon: _extractedOrders.isEmpty ? Icons.person_off : Icons.contact_phone,
+              icon: _extractedOrders.isEmpty
+                  ? Icons.person_off
+                  : Icons.contact_phone,
               title: _extractedOrders.isEmpty
                   ? 'لم يتم العثور على رقم هاتف'
                   : _extractedOrders.length == 1
                       ? 'التواصل مع العميل'
                       : 'مراسلة وتحديد مواقع الأرقام',
-              subtitle: _extractedOrders.isEmpty ? 'قم بالتقاط صورة أولاً لاستخراج الأرقام' : 'عدد الأرقام المتاحة: ${_extractedOrders.length}',
+              subtitle: _extractedOrders.isEmpty
+                  ? 'قم بالتقاط صورة أولاً لاستخراج الأرقام'
+                  : 'عدد الأرقام المتاحة: ${_extractedOrders.length}',
               isLoading: _isLoading,
             ),
           ],
@@ -595,7 +675,8 @@ class _HomeScreenState extends State<HomeScreen> {
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: isPrimary ? Colors.white.withValues(alpha: 0.2) : color,
+                  color:
+                      isPrimary ? Colors.white.withValues(alpha: 0.2) : color,
                   shape: isPrimary ? BoxShape.circle : BoxShape.rectangle,
                   borderRadius: isPrimary ? null : BorderRadius.circular(12),
                 ),
@@ -611,7 +692,9 @@ class _HomeScreenState extends State<HomeScreen> {
                       style: TextStyle(
                         fontSize: isPrimary ? 16 : 15,
                         fontWeight: FontWeight.bold,
-                        color: isPrimary ? Colors.white : (onTap == null ? Colors.grey : Colors.black87),
+                        color: isPrimary
+                            ? Colors.white
+                            : (onTap == null ? Colors.grey : Colors.black87),
                       ),
                     ),
                     const SizedBox(height: 2),
@@ -619,7 +702,9 @@ class _HomeScreenState extends State<HomeScreen> {
                       subtitle,
                       style: TextStyle(
                         fontSize: 12,
-                        color: isPrimary ? Colors.white.withValues(alpha: 0.8) : Colors.grey,
+                        color: isPrimary
+                            ? Colors.white.withValues(alpha: 0.8)
+                            : Colors.grey,
                       ),
                     ),
                   ],
@@ -639,7 +724,11 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget isLoadingWidget(bool isPrimary, IconData? icon, Color iconColor) {
     if (_isLoading && isPrimary) {
-      return const SizedBox(width: 30, height: 30, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white));
+      return const SizedBox(
+          width: 30,
+          height: 30,
+          child:
+              CircularProgressIndicator(strokeWidth: 2, color: Colors.white));
     }
     return Icon(icon, color: isPrimary ? Colors.white : iconColor, size: 24);
   }

@@ -1,5 +1,6 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'app_constants.dart';
 
 class SecurityService {
   SecurityService._(); // منع إنشاء كائن من الفئة (Utility Class Pattern)
@@ -13,12 +14,10 @@ class SecurityService {
     iOptions: _iosOptions,
   );
 
-  static const _pinKey = 'user_app_pin';
-
   /// فحص هل قام المستخدم بإنشاء كلمة مرور سابقاً
   static Future<bool> isPinSet() async {
     try {
-      final pin = await _storage.read(key: _pinKey);
+      final pin = await _storage.read(key: SecureStorageKeys.userPin);
       return pin?.isNotEmpty ?? false;
     } catch (_) {
       return false;
@@ -28,7 +27,7 @@ class SecurityService {
   /// تعيين/حفظ كلمة مرور جديدة
   static Future<void> setPin(String newPin) async {
     try {
-      await _storage.write(key: _pinKey, value: newPin);
+      await _storage.write(key: SecureStorageKeys.userPin, value: newPin);
     } on PlatformException {
       rethrow;
     }
@@ -37,7 +36,7 @@ class SecurityService {
   /// التحقق من صحة كلمة المرور المدخلة
   static Future<bool> verifyPin(String enteredPin) async {
     try {
-      final savedPin = await _storage.read(key: _pinKey);
+      final savedPin = await _storage.read(key: SecureStorageKeys.userPin);
       return savedPin == enteredPin;
     } catch (_) {
       return false;
@@ -47,7 +46,7 @@ class SecurityService {
   /// مسح كلمة المرور / إعادة ضبط رمز الأمان
   static Future<void> clearPin() async {
     try {
-      await _storage.delete(key: _pinKey);
+      await _storage.delete(key: SecureStorageKeys.userPin);
     } catch (_) {
       // تجاهل الأخطاء في حال لم يكن المفتاح موجوداً
     }

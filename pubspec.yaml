@@ -16,7 +16,7 @@ dependencies:
   flutter_map: ^7.0.2
   latlong2: ^0.9.1
   geolocator: ^10.1.1
-  geocoding: ^3.0.0
+  geocoding: ^5.0.0
   url_launcher: ^6.2.2
   
   # الأيقونات والتصميم

@@ -3,6 +3,9 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'app_constants.dart';
+import 'app_theme.dart';
+import 'app_utils.dart';
 import 'database_helper.dart';
 
 class DeliveryMapScreen extends StatefulWidget {
@@ -32,7 +35,7 @@ class _DeliveryMapScreenState extends State<DeliveryMapScreen> {
     final customers = await DatabaseHelper.instance.getSortedCustomersByDistance();
 
     // 2. محاولة جلب موقع الهاتف الحالي بدقة
-    LatLng initialCenter = const LatLng(31.9539, 35.9106); // نقطة افتراضية (عمان)
+    LatLng? devicePosition;
     try {
       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (serviceEnabled) {
@@ -44,30 +47,90 @@ class _DeliveryMapScreenState extends State<DeliveryMapScreen> {
           Position position = await Geolocator.getCurrentPosition(
             desiredAccuracy: LocationAccuracy.high,
           );
-          initialCenter = LatLng(position.latitude, position.longitude);
-          _currentPosition = initialCenter;
+          devicePosition = LatLng(position.latitude, position.longitude);
         }
       }
     } catch (e) {
       debugPrint("خطأ أثناء جلب الموقع الجغرافي: $e");
     }
 
-    // إذا لم يتوفر موقع الجهاز، نأخذ موقع أول شحنة تحتوي على إحداثيات صحيحة
-    if (_currentPosition == null && customers.isNotEmpty) {
+    // 3. تحديد نقطة التركيز: موقع الجهاز > أول عميل له إحداثيات > عمان
+    LatLng initialCenter;
+    if (devicePosition != null) {
+      initialCenter = devicePosition;
+    } else {
+      // البحث عن أول عميل له إحداثيات صحيحة
+      LatLng? firstCustomerPos;
       for (var c in customers) {
         if (c['lat'] != null && c['lng'] != null && c['lat'] != 0 && c['lng'] != 0) {
-          initialCenter = LatLng(c['lat'], c['lng']);
+          firstCustomerPos = LatLng(c['lat'], c['lng']);
           break;
         }
       }
+      initialCenter = firstCustomerPos ?? const LatLng(DefaultCoordinates.ammanLat, DefaultCoordinates.ammanLng);
     }
 
     if (!mounted) return;
     setState(() {
       _customers = customers;
-      _currentPosition = initialCenter;
+      _currentPosition = devicePosition ?? initialCenter;
       _isLoading = false;
     });
+
+    // 4. بعد بناء الخريطة، يتم ضبط العرض لعرض جميع العلامات
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _fitMapToMarkers();
+    });
+  }
+
+  // ضبط عرض الخريطة لعرض جميع العلامات (السائق + العملاء)
+  void _fitMapToMarkers() {
+    final List<LatLng> points = [];
+    
+    // إضافة موقع السائق إذا كان متوفراً
+    if (_currentPosition != null) {
+      points.add(_currentPosition!);
+    }
+    
+    // إضافة مواقع العملاء الذين لديهم إحداثيات صحيحة
+    for (var c in _customers) {
+      if (c['lat'] != null && c['lng'] != null && c['lat'] != 0 && c['lng'] != 0) {
+        points.add(LatLng(c['lat'], c['lng']));
+      }
+    }
+
+    if (points.isEmpty) return;
+    
+    if (points.length == 1) {
+      // إذا كانت هناك نقطة واحدة فقط، ركز عليها بمعامل تكبير مناسب
+      _mapController.move(points.first, 14.0);
+    } else {
+      // حساب الحدود التي تشمل جميع النقاط
+      double minLat = points.first.latitude;
+      double maxLat = points.first.latitude;
+      double minLng = points.first.longitude;
+      double maxLng = points.first.longitude;
+      
+      for (final p in points) {
+        if (p.latitude < minLat) minLat = p.latitude;
+        if (p.latitude > maxLat) maxLat = p.latitude;
+        if (p.longitude < minLng) minLng = p.longitude;
+        if (p.longitude > maxLng) maxLng = p.longitude;
+      }
+      
+      final bounds = LatLngBounds(
+        LatLng(minLat, minLng),
+        LatLng(maxLat, maxLng),
+      );
+      
+      // ضبط الخريطة لعرض جميع العلامات مع هامش
+      _mapController.fitCamera(
+        CameraFit.bounds(
+          bounds: bounds,
+          padding: const EdgeInsets.all(50),
+        ),
+      );
+    }
   }
 
   // فتح خرائط جوجل للتوجيه والإبحار نحو إحداثيات العميل
@@ -79,7 +142,7 @@ class _DeliveryMapScreenState extends State<DeliveryMapScreen> {
       } else {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('تعذر فتح تطبيق الخرائط')),
+          const SnackBar(content: Text(AppMessages.errorMaps)),
         );
       }
     } catch (e) {
@@ -92,7 +155,6 @@ class _DeliveryMapScreenState extends State<DeliveryMapScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('خريطة الشحنات التفاعلية'),
-        backgroundColor: Colors.green,
         actions: [
           IconButton(
             icon: const Icon(Icons.my_location),
@@ -174,13 +236,10 @@ class _DeliveryMapScreenState extends State<DeliveryMapScreen> {
     final String customerName = customer['customerName'] ?? 'عميل بدون اسم';
     final String phone = customer['phone'] ?? 'غير متوفر';
     final String region = customer['region'] ?? 'غير متوفر';
-    final double amount = customer['totalAmount'] ?? 0.0;
+    final double amount = (customer['totalAmount'] as num?)?.toDouble() ?? 0.0;
 
     showModalBottomSheet(
       context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
       builder: (context) {
         return Container(
           padding: const EdgeInsets.all(20.0),
@@ -196,7 +255,7 @@ class _DeliveryMapScreenState extends State<DeliveryMapScreen> {
                     style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                   ),
                   Chip(
-                    label: Text('$amount دينار', style: const TextStyle(color: Colors.white)),
+                    label: Text('${MoneyUtils.format(amount)} دينار', style: const TextStyle(color: Colors.white)),
                     backgroundColor: Colors.green,
                   ),
                 ],
@@ -218,7 +277,7 @@ class _DeliveryMapScreenState extends State<DeliveryMapScreen> {
                   icon: const Icon(Icons.directions, color: Colors.white),
                   label: const Text('بدء التوجيه عبر خرائط جوجل', style: TextStyle(color: Colors.white)),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.green,
+                    backgroundColor: AppTheme.primaryColor,
                     padding: const EdgeInsets.symmetric(vertical: 12),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                   ),
